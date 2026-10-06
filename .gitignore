@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Podcast audio – don't put hundreds of MB/GB in Git
+audio/
+
+# Local processing state
+state.json
