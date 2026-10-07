@@ -363,10 +363,32 @@ def download_file(
 
     temporary.replace(destination)
 
-
 # ============================================================
 # Transcription
 # ============================================================
+
+TRANSCRIBE_CHUNK_SECONDS = 5 * 60
+TRANSCRIBE_OVERLAP_SECONDS = 5
+
+
+def get_audio_duration(audio_file: Path) -> float:
+    """Get audio duration using ffprobe."""
+
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(audio_file),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    return float(result.stdout.strip())
+
 
 def transcribe(
     audio_file: Path,
@@ -377,31 +399,85 @@ def transcribe(
         f"{audio_file.name}"
     )
 
-    segments, info = model.transcribe(
-        str(audio_file),
+    duration = get_audio_duration(audio_file)
 
-        # Swedish.
-        language=LANGUAGE,
-
-        # Reasonably accurate.
-        beam_size=5,
-
-        # Remove long non-speech sections.
-        vad_filter=True,
-
-        # Helps produce useful timestamps.
-        word_timestamps=True,
-
-        # Swedish podcast speech can contain long turns.
-        condition_on_previous_text=True,
+    print(
+        f"  Längd: {duration / 60:.1f} minuter"
     )
 
-    # IMPORTANT:
-    # faster-whisper's segments are lazy.
-    segments = list(segments)
+    print(
+        f"  Chunkstorlek: "
+        f"{TRANSCRIBE_CHUNK_SECONDS / 60:.0f} minuter"
+    )
 
-    return segments, info
+    all_segments = []
+    chunk_start = 0.0
+    first_chunk = True
 
+    while chunk_start < duration:
+
+        # Give every chunk a small overlap with the previous one.
+        if first_chunk:
+            decode_start = 0.0
+        else:
+            decode_start = max(
+                0.0,
+                chunk_start - TRANSCRIBE_OVERLAP_SECONDS,
+            )
+
+        chunk_end = min(
+            chunk_start + TRANSCRIBE_CHUNK_SECONDS,
+            duration,
+        )
+
+        print(
+            f"  Transkriberar "
+            f"{chunk_start / 60:.1f}–"
+            f"{chunk_end / 60:.1f} min..."
+        )
+
+        segments, info = model.transcribe(
+            str(audio_file),
+
+            language=LANGUAGE,
+
+            beam_size=5,
+
+            vad_filter=True,
+
+            word_timestamps=True,
+
+            condition_on_previous_text=True,
+
+            # Let Whisper only process this part of
+            # the episode.
+            clip_timestamps=(
+                decode_start,
+                chunk_end,
+            ),
+        )
+
+        chunk_segments = list(segments)
+
+        for segment in chunk_segments:
+
+            # Ignore anything produced in the overlap
+            # that belongs to the previous chunk.
+            if (
+                not first_chunk
+                and segment.end <= (
+                    chunk_start
+                    + TRANSCRIBE_OVERLAP_SECONDS
+                )
+            ):
+                continue
+
+            all_segments.append(segment)
+
+        first_chunk = False
+        chunk_start = chunk_end
+
+    return all_segments, info
 
 # ============================================================
 # Chapter generation
