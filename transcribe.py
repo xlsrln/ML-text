@@ -18,6 +18,14 @@ import requests
 from bs4 import BeautifulSoup
 from faster_whisper import WhisperModel
 
+import os
+
+os.add_dll_directory(
+    r"C:\Users\axel\AppData\Local\Programs\Python\Python313\Lib\site-packages\nvidia\cublas\bin"
+)
+os.add_dll_directory(
+    r"C:\Users\axel\AppData\Local\Programs\Python\Python313\Lib\site-packages\nvidia\cudnn\bin"
+)
 
 # ============================================================
 # Configuration
@@ -741,8 +749,8 @@ def main():
 
     model = WhisperModel(
         args.model,
-        device="cpu",
-        compute_type="int8",
+        #device="cpu", compute_type="int8",
+        device="cuda", compute_type="float16"
     )
 
     # --------------------------------------------------------

@@ -6,4 +6,4 @@ __pycache__/
 audio/
 
 # Local processing state
-state.json
+state.json.hftoken
