@@ -386,7 +386,6 @@ def download_file(
     print()
 
     temporary.replace(destination)
-
 # ============================================================
 # Transcription
 # ============================================================
@@ -414,6 +413,34 @@ def get_audio_duration(audio_file: Path) -> float:
     return float(result.stdout.strip())
 
 
+def make_audio_chunk(
+    audio_file: Path,
+    start: float,
+    end: float,
+    output_file: Path,
+):
+    """Decode one small section of an audio file with FFmpeg."""
+
+    duration = end - start
+
+    subprocess.run(
+        [
+            str(FFMPEG),
+            "-hide_banner",
+            "-loglevel", "error",
+            "-ss", str(start),
+            "-i", str(audio_file),
+            "-t", str(duration),
+            "-ac", "1",
+            "-ar", "16000",
+            "-c:a", "pcm_s16le",
+            "-y",
+            str(output_file),
+        ],
+        check=True,
+    )
+
+
 def transcribe(
     audio_file: Path,
     model: WhisperModel,
@@ -435,71 +462,111 @@ def transcribe(
     )
 
     all_segments = []
-    chunk_start = 0.0
-    first_chunk = True
 
-    while chunk_start < duration:
+    # Use the system temporary directory.
+    # Your TEMP directory is already on D:.
+    import tempfile
 
-        # Give every chunk a small overlap with the previous one.
-        if first_chunk:
-            decode_start = 0.0
-        else:
-            decode_start = max(
-                0.0,
-                chunk_start - TRANSCRIBE_OVERLAP_SECONDS,
+    with tempfile.TemporaryDirectory(
+        prefix="whisper_chunks_"
+    ) as temp_dir:
+
+        temp_dir = Path(temp_dir)
+
+        chunk_start = 0.0
+        first_chunk = True
+
+        while chunk_start < duration:
+
+            chunk_end = min(
+                chunk_start + TRANSCRIBE_CHUNK_SECONDS,
+                duration,
             )
 
-        chunk_end = min(
-            chunk_start + TRANSCRIBE_CHUNK_SECONDS,
-            duration,
-        )
-
-        print(
-            f"  Transkriberar "
-            f"{chunk_start / 60:.1f}–"
-            f"{chunk_end / 60:.1f} min..."
-        )
-
-        segments, info = model.transcribe(
-            str(audio_file),
-
-            language=LANGUAGE,
-
-            beam_size=5,
-
-            vad_filter=True,
-
-            word_timestamps=True,
-
-            condition_on_previous_text=True,
-
-            # Let Whisper only process this part of
-            # the episode.
-            clip_timestamps=(
-                decode_start,
-                chunk_end,
-            ),
-        )
-
-        chunk_segments = list(segments)
-
-        for segment in chunk_segments:
-
-            # Ignore anything produced in the overlap
-            # that belongs to the previous chunk.
-            if (
-                not first_chunk
-                and segment.end <= (
-                    chunk_start
-                    + TRANSCRIBE_OVERLAP_SECONDS
+            # Add overlap before the chunk, except
+            # for the first chunk.
+            decode_start = (
+                0.0
+                if first_chunk
+                else max(
+                    0.0,
+                    chunk_start - TRANSCRIBE_OVERLAP_SECONDS,
                 )
-            ):
-                continue
+            )
 
-            all_segments.append(segment)
+            decode_end = chunk_end
 
-        first_chunk = False
-        chunk_start = chunk_end
+            print(
+                f"  Transkriberar "
+                f"{chunk_start / 60:.1f}–"
+                f"{chunk_end / 60:.1f} min..."
+            )
+
+            chunk_file = (
+                temp_dir /
+                f"chunk_{int(chunk_start):06d}.wav"
+            )
+
+            make_audio_chunk(
+                audio_file,
+                decode_start,
+                decode_end,
+                chunk_file,
+            )
+
+            segments, info = model.transcribe(
+                str(chunk_file),
+
+                language=LANGUAGE,
+
+                beam_size=5,
+
+                vad_filter=True,
+
+                word_timestamps=True,
+
+                condition_on_previous_text=True,
+            )
+
+            chunk_segments = list(segments)
+
+            for segment in chunk_segments:
+
+                # Whisper timestamps are relative to
+                # the chunk, so convert them to absolute
+                # episode timestamps.
+                segment.start += decode_start
+                segment.end += decode_start
+
+                if hasattr(segment, "words") and segment.words:
+                    for word in segment.words:
+                        if word.start is not None:
+                            word.start += decode_start
+
+                        if word.end is not None:
+                            word.end += decode_start
+
+                # For chunks after the first, don't keep
+                # transcript material that belongs entirely
+                # to the overlap.
+                if (
+                    not first_chunk
+                    and segment.end <= chunk_start
+                ):
+                    continue
+
+                # Don't let the overlap produce duplicate
+                # material after the actual chunk boundary.
+                if (
+                    not first_chunk
+                    and segment.start < chunk_start
+                ):
+                    segment.start = chunk_start
+
+                all_segments.append(segment)
+
+            first_chunk = False
+            chunk_start = chunk_end
 
     return all_segments, info
 
