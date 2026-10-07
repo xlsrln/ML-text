@@ -12,10 +12,27 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import subprocess
 
 import feedparser
 import requests
 from bs4 import BeautifulSoup
+
+import os
+
+os.add_dll_directory(
+    r"C:\Users\axel\AppData\Local\Programs\Python\Python313\Lib\site-packages\nvidia\cublas\bin"
+)
+os.add_dll_directory(
+    r"C:\Users\axel\AppData\Local\Programs\Python\Python313\Lib\site-packages\nvidia\cudnn\bin"
+)
+
+os.environ["PATH"] = (
+    r"C:\Users\axel\AppData\Local\Programs\Python\Python313\Lib\site-packages\nvidia\cublas\bin;"
+    r"C:\Users\axel\AppData\Local\Programs\Python\Python313\Lib\site-packages\nvidia\cudnn\bin;"
+    + os.environ["PATH"]
+)
+
 from faster_whisper import WhisperModel
 
 import os
@@ -30,6 +47,13 @@ os.add_dll_directory(
 # ============================================================
 # Configuration
 # ============================================================
+
+FFMPEG_DIR = Path(
+    r"D:\axelstuff\Downloads\ffmpeg-master-latest-win64-gpl-shared"
+) / "ffmpeg-master-latest-win64-gpl-shared" / "bin"
+
+FFMPEG = FFMPEG_DIR / "ffmpeg.exe"
+FFPROBE = FFMPEG_DIR / "ffprobe.exe"
 
 FEED_URL = "https://feed.podbean.com/maratonlabbet/feed.xml"
 
@@ -376,7 +400,7 @@ def get_audio_duration(audio_file: Path) -> float:
 
     result = subprocess.run(
         [
-            "ffprobe",
+            str(FFPROBE),
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
