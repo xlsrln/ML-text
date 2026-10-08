@@ -218,7 +218,7 @@ def build_markdown(data):
     lines.append("## Viktigaste lärdomarna")
     lines.append("")
 
-    for item in summary["key_takeaways"\]:
+    for item in summary["key_takeaways"]:
         lines.append(f"- {item}")
 
     lines.append("")
@@ -229,12 +229,12 @@ def build_markdown(data):
         ("Mål", "goals"),
         ("Skador", "injuries"),
         ("Åsikter", "opinions"),
-    \]:
+    ]:
 
         lines.append("")
         lines.append(f"### {section[0]}")
 
-        for item in data["johan"][section[1]\]:
+        for item in data["johan"][section[1]]:
             lines.append(f"- {item}")
 
     lines.append("")
@@ -245,27 +245,27 @@ def build_markdown(data):
         ("Mål", "goals"),
         ("Skador", "injuries"),
         ("Åsikter", "opinions"),
-    \]:
+    ]:
 
         lines.append("")
         lines.append(f"### {section[0]}")
 
-        for item in data["erik"][section[1]\]:
+        for item in data["erik"][section[1]]:
             lines.append(f"- {item}")
 
-    if data["guests"\]:
+    if data["guests"]:
 
         lines.append("")
         lines.append("## Gäster")
 
-        for guest in data["guests"\]:
+        for guest in data["guests"]:
 
             lines.append("")
             lines.append(
                 f"### {guest['name']}"
             )
 
-            if guest["background"\]:
+            if guest["background"]:
                 lines.append("")
                 lines.append(
                     guest["background"]
@@ -274,7 +274,7 @@ def build_markdown(data):
             lines.append("")
             lines.append("Råd:")
 
-            for advice in guest["advice"\]:
+            for advice in guest["advice"]:
                 lines.append(
                     f"- {advice}"
                 )
