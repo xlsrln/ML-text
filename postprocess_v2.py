@@ -17,18 +17,18 @@ EPISODES_DIR = BASE_DIR / "episodes"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "qwen3:8b"
 
+# Qwen gets this many transcript lines per analysis call.
+LINES_PER_CHUNK = 80
+
+# Ollama timeout per request.
 OLLAMA_TIMEOUT = 600
 
-# Number of transcript lines sent to Ollama at once.
-# Keeping this reasonably small helps Qwen stay focused.
-LINES_PER_BATCH = 80
-
 
 # ============================================================
-# JSON schema for Ollama
+# Final output schema
 # ============================================================
 
-OUTPUT_SCHEMA = {
+FINAL_SCHEMA = {
     "type": "object",
     "properties": {
         "episode_summary": {
@@ -72,7 +72,61 @@ OUTPUT_SCHEMA = {
 
 
 # ============================================================
-# Markdown parsing
+# Chunk output schema
+# ============================================================
+
+CHUNK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {
+            "type": "string"
+        },
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "chapter_candidates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "timestamp": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "summary": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "timestamp",
+                    "title",
+                    "summary"
+                ]
+            }
+        },
+        "keywords": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "required": [
+        "summary",
+        "topics",
+        "chapter_candidates",
+        "keywords"
+    ]
+}
+
+
+# ============================================================
+# Timestamp / transcript parsing
 # ============================================================
 
 TIMESTAMP_RE = re.compile(
@@ -82,22 +136,10 @@ TIMESTAMP_RE = re.compile(
 
 def parse_transcript(markdown: str):
     """
-    Extract transcript lines:
-
-        **[00:05]** Hello there
-
-    Returns:
-        [
-            {
-                "timestamp": "00:05",
-                "text": "Hello there"
-            },
-            ...
-        ]
+    Extract transcript lines from the Markdown file.
     """
 
     lines = []
-
     in_transcript = False
 
     for line in markdown.splitlines():
@@ -126,11 +168,8 @@ def parse_transcript(markdown: str):
     return lines
 
 
-# ============================================================
-# Episode metadata
-# ============================================================
-
 def extract_title(markdown: str) -> str:
+
     match = re.search(
         r"^#\s+Avsnitt\s+\d+:\s*(.+)$",
         markdown,
@@ -143,34 +182,37 @@ def extract_title(markdown: str) -> str:
     return "Okänt avsnitt"
 
 
-def extract_episode_number(path: Path) -> str:
-    match = re.match(r"(\d+)-", path.name)
+# ============================================================
+# Chunking
+# ============================================================
 
-    if match:
-        return match.group(1)
+def make_chunks(lines, chunk_size=LINES_PER_CHUNK):
 
-    return "?"
+    return [
+        lines[i:i + chunk_size]
+        for i in range(
+            0,
+            len(lines),
+            chunk_size,
+        )
+    ]
 
 
 # ============================================================
 # Ollama
 # ============================================================
 
-def ask_ollama(prompt: str) -> dict:
+def call_ollama(
+    prompt: str,
+    schema: dict,
+) -> dict:
 
     payload = {
         "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
-
-        # Qwen3 supports this at the top level.
         "think": False,
-
-        # IMPORTANT:
-        # Give Ollama the actual JSON schema instead of just
-        # asking for JSON in natural language.
-        "format": OUTPUT_SCHEMA,
-
+        "format": schema,
         "options": {
             "temperature": 0,
         },
@@ -189,109 +231,95 @@ def ask_ollama(prompt: str) -> dict:
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"Ollama returnerade HTTP {response.status_code}:\n"
+            f"Ollama returnerade HTTP "
+            f"{response.status_code}:\n"
             f"{response.text[:3000]}"
         )
 
     try:
         outer = response.json()
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         raise RuntimeError(
             "Ollama returnerade inte giltig JSON:\n"
             + response.text[:3000]
-        )
+        ) from exc
 
     raw = outer.get("response", "")
 
     if not raw:
         print("\nOllama-svar:")
-        print(json.dumps(outer, ensure_ascii=False, indent=2)[:5000])
-
-        raise RuntimeError(
-            "Ollama returnerade ett tomt 'response'-fält."
+        print(
+            json.dumps(
+                outer,
+                ensure_ascii=False,
+                indent=2,
+            )[:5000]
         )
 
-    print("\nSvar från Ollama:")
-    print(raw[:1500])
+        raise RuntimeError(
+            "Ollama returnerade ett tomt response-fält."
+        )
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
+
         print("\n--- Ogiltigt JSON från Ollama ---")
         print(raw[:5000])
         print("--- slut ---")
 
         raise RuntimeError(
-            f"Ollamas response kunde inte parsas som JSON: {exc}"
+            f"Kunde inte parsa Ollamas JSON: {exc}"
         ) from exc
 
     return data
 
 
 # ============================================================
-# Prompt
+# Chunk prompt
 # ============================================================
 
-def make_prompt(
+def make_chunk_prompt(
     title: str,
-    transcript_lines: list[dict],
-    is_full_episode: bool = True,
+    chunk: list[dict],
+    chunk_number: int,
+    total_chunks: int,
 ) -> str:
 
     transcript = "\n".join(
         f"[{item['timestamp']}] {item['text']}"
-        for item in transcript_lines
+        for item in chunk
     )
 
-    if is_full_episode:
-        task = """
-Analysera hela podcastavsnittet.
-
-1. Skriv en kort men informativ sammanfattning av hela avsnittet.
-2. Identifiera de viktigaste ämnesbytena och skapa kapitel.
-3. Ge varje kapitel en kort, tydlig titel.
-4. Ge varje kapitel en kort sammanfattning.
-5. Ta fram 5–15 relevanta ämnesord/keywords.
-
-Välj bara kapitel när samtalet faktiskt byter ämne.
-Skapa inte ett kapitel för varje liten fråga eller kommentar.
-
-Använd tidsstämplarna i transkriptionen för kapitlens starttid.
-"""
-    else:
-        task = """
-Analysera detta transkriptutdrag.
-
-Identifiera:
-- viktiga ämnen
-- viktiga fakta
-- möjliga kapitel
-- relevanta keywords
-
-Detta är ett delutdrag, så sammanfattningen behöver bara beskriva
-vad som faktiskt förekommer i utdraget.
-"""
-
     return f"""
-Du arbetar med efterbearbetning av en svensk podcasttranskription.
+Du analyserar en svensk podcast om löpning och maratonträning.
 
-Podcastavsnitt:
+Podcast:
 {title}
 
-{task}
+Detta är del {chunk_number} av {total_chunks}.
+
+Analysera ENDAST innehållet i detta utdrag.
+
+Ta fram:
+
+1. En kort sammanfattning av vad som faktiskt sägs.
+2. De viktigaste ämnena.
+3. Kandidater till kapitel när ett tydligt ämnesbyte sker.
+4. Relevanta keywords.
 
 VIKTIGT:
 
-Du ska INTE skriva om transkriptionen.
+- Återge inte hela transkriptionen.
+- Skapa inte ett "transcript"-fält.
+- Hitta inte på information som inte finns i texten.
+- Kapitel ska bara föreslås vid verkliga ämnesbyten.
+- Använd tidsstämplarna från texten.
+- Skriv på svenska.
+- Var särskilt uppmärksam på löpning, träning, maraton,
+  träningsfysiologi och namn.
 
-Du ska INTE återge transkriptionen.
-
-Du ska INTE skapa ett fält som heter "transcript".
-
-Du ska analysera innehållet och returnera endast JSON enligt det
-schema som API:t har skickat till dig.
-
-Var noggrann med svenska namn, löptermer och träningsbegrepp.
+Returnera endast JSON enligt det schema du fått.
 
 TRANSKRIPTION:
 
@@ -300,10 +328,111 @@ TRANSKRIPTION:
 
 
 # ============================================================
+# Final synthesis prompt
+# ============================================================
+
+def make_final_prompt(
+    title: str,
+    chunk_results: list[dict],
+) -> str:
+
+    parts = []
+
+    for i, result in enumerate(chunk_results, start=1):
+
+        parts.append(
+            f"""
+--- DEL {i} ---
+
+Sammanfattning:
+{result.get("summary", "")}
+
+Ämnen:
+{", ".join(result.get("topics", []))}
+
+Kapitelkandidater:
+{json.dumps(
+    result.get("chapter_candidates", []),
+    ensure_ascii=False,
+    indent=2,
+)}
+
+Keywords:
+{", ".join(result.get("keywords", []))}
+"""
+        )
+
+    combined = "\n".join(parts)
+
+    return f"""
+Du är slutredaktör för en svensk podcast om löpning och
+maratonträning.
+
+Podcastavsnitt:
+{title}
+
+Du har fått analyser från flera delar av samma podcastavsnitt.
+
+Din uppgift är att skapa den slutliga strukturen för hela avsnittet.
+
+Gör följande:
+
+1. Skriv en bra sammanfattning av hela avsnittet.
+2. Skapa en sammanhängande lista med kapitel.
+3. Slå ihop kapitelkandidater som handlar om samma ämne.
+4. Ta bort kapitel som är för små eller oviktiga.
+5. Behåll tidsstämplar från kapitelkandidaterna.
+6. Ge kapitlen korta och beskrivande svenska titlar.
+7. Ge varje kapitel en kort sammanfattning.
+8. Skapa 5–15 relevanta keywords.
+
+Kapitel ska representera verkliga ämnesblock, inte varje liten
+fråga eller kommentar.
+
+VIKTIGT:
+
+- Hitta inte på information.
+- Återge inte transkriptionen.
+- Skapa inte ett "transcript"-fält.
+- Skriv på svenska.
+- Returnera endast JSON enligt det schema du fått.
+
+Här är delanalyserna:
+
+{combined}
+"""
+
+
+# ============================================================
 # Validation
 # ============================================================
 
-def validate_result(data: dict) -> bool:
+def validate_chunk_result(data: dict) -> bool:
+
+    required = [
+        "summary",
+        "topics",
+        "chapter_candidates",
+        "keywords",
+    ]
+
+    missing = [
+        key
+        for key in required
+        if key not in data
+    ]
+
+    if missing:
+        print(
+            "  FEL: saknade fält:",
+            ", ".join(missing),
+        )
+        return False
+
+    return True
+
+
+def validate_final_result(data: dict) -> bool:
 
     required = [
         "episode_summary",
@@ -312,19 +441,17 @@ def validate_result(data: dict) -> bool:
     ]
 
     missing = [
-        key for key in required
+        key
+        for key in required
         if key not in data
     ]
 
     if missing:
-        print("\nFEL: Ollama returnerade inte rätt struktur.")
-        print("Saknade fält:", ", ".join(missing))
         print(
-            "Returnerade fält:",
-            ", ".join(data.keys()),
+            "\nFEL: slutresultatet saknar:",
+            ", ".join(missing),
         )
 
-        print("\nOllama returnerade:")
         print(
             json.dumps(
                 data,
@@ -335,23 +462,11 @@ def validate_result(data: dict) -> bool:
 
         return False
 
-    if not isinstance(data["episode_summary"], str):
-        print("FEL: episode_summary är inte en sträng.")
-        return False
-
-    if not isinstance(data["chapters"], list):
-        print("FEL: chapters är inte en lista.")
-        return False
-
-    if not isinstance(data["keywords"], list):
-        print("FEL: keywords är inte en lista.")
-        return False
-
     return True
 
 
 # ============================================================
-# Markdown output
+# Markdown builder
 # ============================================================
 
 def build_markdown(
@@ -363,47 +478,43 @@ def build_markdown(
     chapters = data["chapters"]
     keywords = data["keywords"]
 
-    # --------------------------------------------------------
-    # Remove old generated sections if they exist.
-    # --------------------------------------------------------
-
-    text = original_markdown
-
-    # Remove existing AI-generated section.
+    # Remove previously generated section.
     text = re.split(
         r"\n## AI-efterbearbetning\s*\n",
-        text,
+        original_markdown,
         maxsplit=1,
     )[0].rstrip()
 
-    output = []
-
-    # Keep original content.
-    output.append(text)
-
-    output.append("")
-    output.append("## AI-efterbearbetning")
-    output.append("")
-    output.append("### Sammanfattning")
-    output.append("")
-    output.append(summary.strip())
-
-    # --------------------------------------------------------
-    # Chapters
-    # --------------------------------------------------------
+    output = [
+        text,
+        "",
+        "## AI-efterbearbetning",
+        "",
+        "### Sammanfattning",
+        "",
+        summary.strip(),
+    ]
 
     if chapters:
-        output.append("")
-        output.append("### Kapitel")
-        output.append("")
+
+        output.extend([
+            "",
+            "### Kapitel",
+            "",
+        ])
 
         for chapter in chapters:
 
-            timestamp = chapter.get("timestamp", "").strip()
-            title = chapter.get("title", "").strip()
-            chapter_summary = chapter.get(
-                "summary",
-                "",
+            timestamp = str(
+                chapter.get("timestamp", "")
+            ).strip()
+
+            title = str(
+                chapter.get("title", "")
+            ).strip()
+
+            chapter_summary = str(
+                chapter.get("summary", "")
             ).strip()
 
             if not title:
@@ -423,27 +534,28 @@ def build_markdown(
                     f"  {chapter_summary}"
                 )
 
-    # --------------------------------------------------------
-    # Keywords
-    # --------------------------------------------------------
-
     if keywords:
-        output.append("")
-        output.append("### Ämnesord")
-        output.append("")
 
         clean_keywords = []
 
         for keyword in keywords:
+
             keyword = str(keyword).strip()
 
-            if keyword and keyword not in clean_keywords:
+            if (
+                keyword
+                and keyword not in clean_keywords
+            ):
                 clean_keywords.append(keyword)
 
         if clean_keywords:
-            output.append(
-                ", ".join(clean_keywords)
-            )
+
+            output.extend([
+                "",
+                "### Ämnesord",
+                "",
+                ", ".join(clean_keywords),
+            ])
 
     output.append("")
 
@@ -451,7 +563,7 @@ def build_markdown(
 
 
 # ============================================================
-# Process one episode
+# Process episode
 # ============================================================
 
 def process_episode(path: Path):
@@ -465,7 +577,9 @@ def process_episode(path: Path):
         encoding="utf-8"
     )
 
-    transcript_lines = parse_transcript(markdown)
+    transcript_lines = parse_transcript(
+        markdown
+    )
 
     if not transcript_lines:
         print("Hittade ingen transkription.")
@@ -479,35 +593,125 @@ def process_episode(path: Path):
 
     print(f"Avsnitt: {title}")
 
-    # --------------------------------------------------------
-    # For now, send the complete episode.
-    # --------------------------------------------------------
-
-    prompt = make_prompt(
-        title,
-        transcript_lines,
-        is_full_episode=True,
+    chunks = make_chunks(
+        transcript_lines
     )
 
-    print("Skickar avsnittet till Ollama...")
+    print(
+        f"Delar upp i {len(chunks)} Ollama-delar "
+        f"({LINES_PER_CHUNK} rader/del)."
+    )
 
-    data = ask_ollama(prompt)
+    # --------------------------------------------------------
+    # Stage 1: analyze chunks
+    # --------------------------------------------------------
 
-    if not validate_result(data):
-        print("\nAvsnittet sparades inte.")
+    chunk_results = []
+
+    for index, chunk in enumerate(
+        chunks,
+        start=1,
+    ):
+
+        start_time = chunk[0]["timestamp"]
+        end_time = chunk[-1]["timestamp"]
+
+        print()
+        print(
+            f"[{index}/{len(chunks)}] "
+            f"{start_time} -> {end_time}"
+        )
+
+        prompt = make_chunk_prompt(
+            title,
+            chunk,
+            index,
+            len(chunks),
+        )
+
+        try:
+
+            result = call_ollama(
+                prompt,
+                CHUNK_SCHEMA,
+            )
+
+        except Exception as exc:
+
+            print(
+                f"  FEL: {exc}"
+            )
+
+            # Continue with other chunks.
+            continue
+
+        if not validate_chunk_result(
+            result
+        ):
+            continue
+
+        chunk_results.append(result)
+
+        print("  OK")
+
+    if not chunk_results:
+
+        raise RuntimeError(
+            "Ingen chunk kunde analyseras."
+        )
+
+    print()
+    print(
+        f"Analyserade {len(chunk_results)} "
+        f"av {len(chunks)} delar."
+    )
+
+    # --------------------------------------------------------
+    # Stage 2: final synthesis
+    # --------------------------------------------------------
+
+    print()
+    print("Skickar delanalyserna till Ollama")
+    print("för slutlig sammanställning...")
+
+    final_prompt = make_final_prompt(
+        title,
+        chunk_results,
+    )
+
+    final_data = call_ollama(
+        final_prompt,
+        FINAL_SCHEMA,
+    )
+
+    if not validate_final_result(
+        final_data
+    ):
+        print(
+            "\nSlutresultatet kunde inte valideras."
+        )
         return
 
     # --------------------------------------------------------
-    # Save metadata separately.
+    # Save metadata
     # --------------------------------------------------------
 
     metadata_path = path.with_suffix(
         ".metadata.json"
     )
 
+    metadata = {
+        "model": OLLAMA_MODEL,
+        "chunks": len(chunks),
+        "successful_chunks": len(
+            chunk_results
+        ),
+        **final_data,
+    }
+
     metadata_path.write_text(
         json.dumps(
-            data,
+            metadata,
             ensure_ascii=False,
             indent=2,
         ),
@@ -515,16 +719,17 @@ def process_episode(path: Path):
     )
 
     print(
-        f"Sparade metadata: {metadata_path.name}"
+        f"Sparade metadata: "
+        f"{metadata_path.name}"
     )
 
     # --------------------------------------------------------
-    # Build processed Markdown.
+    # Save processed Markdown
     # --------------------------------------------------------
 
     output = build_markdown(
         markdown,
-        data,
+        final_data,
     )
 
     output_path = path.with_suffix(
@@ -537,7 +742,8 @@ def process_episode(path: Path):
     )
 
     print(
-        f"Sparade Markdown: {output_path.name}"
+        f"Sparade Markdown: "
+        f"{output_path.name}"
     )
 
     print()
@@ -545,7 +751,7 @@ def process_episode(path: Path):
 
 
 # ============================================================
-# Find episodes
+# Find episode files
 # ============================================================
 
 def find_episode_files():
@@ -554,15 +760,16 @@ def find_episode_files():
         EPISODES_DIR.glob("*.md")
     )
 
-    # Never process generated files as input.
-    files = [
+    return [
         path
         for path in files
-        if not path.name.endswith(".processed.md")
-        and not path.name.endswith(".summary.md")
+        if not path.name.endswith(
+            ".processed.md"
+        )
+        and not path.name.endswith(
+            ".summary.md"
+        )
     ]
-
-    return files
 
 
 # ============================================================
@@ -572,33 +779,45 @@ def find_episode_files():
 def main():
 
     parser = argparse.ArgumentParser(
-        description="Efterbearbeta podcasttranskriptioner med Ollama."
+        description=(
+            "Efterbearbeta podcasttranskriptioner "
+            "med Ollama."
+        )
     )
 
     parser.add_argument(
         "--only",
         type=int,
-        help="Bearbeta endast ett avsnitt, t.ex. --only 2",
+        help=(
+            "Bearbeta endast ett avsnitt, "
+            "t.ex. --only 2"
+        ),
     )
 
     parser.add_argument(
         "--from",
         dest="from_episode",
         type=int,
-        help="Börja från ett visst avsnitt",
+        help=(
+            "Börja från ett visst avsnitt."
+        ),
     )
 
     args = parser.parse_args()
 
     if not EPISODES_DIR.exists():
+
         print(
-            f"Hittar inte katalogen: {EPISODES_DIR}"
+            f"Hittar inte katalogen: "
+            f"{EPISODES_DIR}"
         )
+
         sys.exit(1)
 
     files = find_episode_files()
 
     if args.only is not None:
+
         prefix = f"{args.only:03d}-"
 
         files = [
@@ -618,32 +837,36 @@ def main():
         ]
 
     if not files:
+
         print("Inga avsnitt hittades.")
         return
 
     print(
-        f"Använder Ollama-modell: {OLLAMA_MODEL}"
+        f"Använder Ollama-modell: "
+        f"{OLLAMA_MODEL}"
     )
 
     for path in files:
 
         try:
+
             process_episode(path)
 
         except KeyboardInterrupt:
+
             print("\nAvbrutet.")
             sys.exit(1)
 
         except Exception as exc:
+
             print()
             print(
-                f"FEL vid bearbetning av {path.name}:"
+                f"FEL vid bearbetning av "
+                f"{path.name}:"
             )
             print(exc)
             print()
 
-            # Continue to next episode rather than
-            # killing the entire batch.
             continue
 
 
