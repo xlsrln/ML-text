@@ -18,19 +18,24 @@ EPISODES_DIR = BASE_DIR / "episodes"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "gemma3:4b"
 
-# Small batches are much more reliable with gemma3:4b.
-CORRECTION_LINES_PER_CHUNK = 15
-
-# Chapter analysis window.
-CHAPTER_WINDOW_SECONDS = 8 * 60
-
-# Don't allow chapters closer together than this.
-MIN_CHAPTER_SECONDS = 4 * 60
-
 REQUEST_TIMEOUT = 600
 
-# Number of excerpts used for speaker identification.
-SPEAKER_EXCERPTS_PER_SPEAKER = 10
+# Whisper correction.
+# Smaller = safer for a 4B model.
+CORRECTION_LINES_PER_CHUNK = 15
+
+# Speaker identification.
+# We want enough context to understand a conversation,
+# but not so much that Gemma gets confused.
+SPEAKER_LINES_PER_CHUNK = 30
+
+# Chapter analysis.
+TOPIC_WINDOW_SECONDS = 4 * 60
+MIN_CHAPTER_SECONDS = 4 * 60
+
+# Maximum amount of transcript sent for episode-level
+# topic/keyword extraction.
+TOPIC_SAMPLE_LINES = 150
 
 
 # ============================================================
@@ -62,23 +67,20 @@ def ask_ollama(
 
     except requests.RequestException as exc:
         raise RuntimeError(
-            f"Could not communicate with Ollama: {exc}"
+            f"Kunde inte kommunicera med Ollama: {exc}"
         ) from exc
 
     data = response.json()
 
     if "response" not in data:
         raise RuntimeError(
-            f"Unexpected Ollama response: {data}"
+            f"Oväntat svar från Ollama: {data}"
         )
 
     return data["response"].strip()
 
 
 def clean_json_response(text: str) -> str:
-    """
-    Remove markdown fences and surrounding text where possible.
-    """
 
     text = text.strip()
 
@@ -96,7 +98,6 @@ def clean_json_response(text: str) -> str:
 
     text = text.strip()
 
-    # Try to extract the outermost JSON object.
     start = text.find("{")
     end = text.rfind("}")
 
@@ -107,36 +108,58 @@ def clean_json_response(text: str) -> str:
 
 
 # ============================================================
-# Timestamp helpers
+# Time
 # ============================================================
 
 def mmss_to_seconds(value: str) -> float:
 
-    parts = [int(x) for x in value.split(":")]
+    parts = [
+        int(x)
+        for x in value.split(":")
+    ]
 
     if len(parts) == 2:
+
         minutes, seconds = parts
-        return minutes * 60 + seconds
+
+        return (
+            minutes * 60
+            + seconds
+        )
 
     if len(parts) == 3:
-        hours, minutes, seconds = parts
-        return hours * 3600 + minutes * 60 + seconds
 
-    raise ValueError(f"Invalid timestamp: {value}")
+        hours, minutes, seconds = parts
+
+        return (
+            hours * 3600
+            + minutes * 60
+            + seconds
+        )
+
+    raise ValueError(
+        f"Ogiltig tidsstämpel: {value}"
+    )
 
 
 def seconds_to_mmss(seconds: float) -> str:
 
-    seconds = max(0, int(round(seconds)))
+    seconds = max(
+        0,
+        int(round(seconds)),
+    )
 
     minutes = seconds // 60
     secs = seconds % 60
 
-    return f"{minutes:02d}:{secs:02d}"
+    return (
+        f"{minutes:02d}:"
+        f"{secs:02d}"
+    )
 
 
 # ============================================================
-# Episode files
+# Files
 # ============================================================
 
 def find_episode_markdown(
@@ -150,14 +173,17 @@ def find_episode_markdown(
     )
 
     matches = [
-        p for p in matches
-        if not p.name.endswith(".processed.md")
+        p
+        for p in matches
+        if not p.name.endswith(
+            ".processed.md"
+        )
     ]
 
     if not matches:
         raise FileNotFoundError(
-            f"No Markdown found for episode "
-            f"{episode_number:03d}"
+            f"Hittade ingen Markdown-fil för "
+            f"avsnitt {episode_number:03d}"
         )
 
     return matches[0]
@@ -192,6 +218,7 @@ def parse_transcript(
     for line in markdown.splitlines():
 
         if line.strip() == "## Transkription":
+
             in_transcript = True
             continue
 
@@ -211,7 +238,9 @@ def parse_transcript(
         transcript.append(
             {
                 "timestamp": timestamp,
-                "seconds": mmss_to_seconds(timestamp),
+                "seconds": mmss_to_seconds(
+                    timestamp
+                ),
                 "text": text,
             }
         )
@@ -230,7 +259,7 @@ def load_diarization(
     if not diarization_file.exists():
 
         print(
-            f"WARNING: no diarization file: "
+            f"VARNING: ingen diariseringsfil hittades: "
             f"{diarization_file}",
             file=sys.stderr,
         )
@@ -258,7 +287,7 @@ def load_diarization(
     else:
 
         raise ValueError(
-            "Unexpected diarization format"
+            "Okänt format på diariseringsfilen."
         )
 
     return segments
@@ -270,8 +299,7 @@ def speaker_for_interval(
     diarization: list[dict[str, Any]],
 ) -> str | None:
 
-    best_speaker = None
-    best_overlap = 0.0
+    overlaps: dict[str, float] = {}
 
     for segment in diarization:
 
@@ -298,28 +326,48 @@ def speaker_for_interval(
             overlap_end - overlap_start,
         )
 
-        if overlap > best_overlap:
+        if overlap <= 0:
+            continue
 
-            best_overlap = overlap
+        speaker = segment.get(
+            "speaker"
+        )
 
-            best_speaker = segment.get(
-                "speaker"
+        if not speaker:
+            continue
+
+        overlaps[speaker] = (
+            overlaps.get(
+                speaker,
+                0.0,
             )
+            + overlap
+        )
 
-    return best_speaker
+    if not overlaps:
+        return None
+
+    return max(
+        overlaps,
+        key=overlaps.get,
+    )
 
 
-def assign_speakers(
+def assign_local_speakers(
     transcript: list[dict[str, Any]],
     diarization: list[dict[str, Any]],
 ) -> None:
 
-    for i, line in enumerate(transcript):
+    for i, line in enumerate(
+        transcript
+    ):
 
         start = line["seconds"]
 
         if i + 1 < len(transcript):
-            end = transcript[i + 1]["seconds"]
+            end = transcript[
+                i + 1
+            ]["seconds"]
         else:
             end = start + 10
 
@@ -338,140 +386,36 @@ def assign_speakers(
 # Speaker identification
 # ============================================================
 
-def build_speaker_excerpts(
-    transcript: list[dict[str, Any]],
+def speaker_batch_text(
+    lines: list[dict[str, Any]],
 ) -> str:
 
-    speakers: dict[str, list] = {}
+    output = []
 
-    for line in transcript:
+    for i, line in enumerate(
+        lines,
+        start=1,
+    ):
 
         speaker = line.get(
             "local_speaker",
             "UNKNOWN",
         )
 
-        speakers.setdefault(
-            speaker,
-            [],
-        ).append(line)
-
-    output = []
-
-    for speaker, lines in sorted(
-        speakers.items()
-    ):
-
         output.append(
-            f"\n--- {speaker} ---"
+            f"{i}. "
+            f"[{line['timestamp']}] "
+            f"{speaker}: "
+            f"{line['text']}"
         )
-
-        if len(lines) <= SPEAKER_EXCERPTS_PER_SPEAKER:
-
-            selected = lines
-
-        else:
-
-            step = (
-                len(lines)
-                / SPEAKER_EXCERPTS_PER_SPEAKER
-            )
-
-            selected = [
-                lines[
-                    min(
-                        int(i * step),
-                        len(lines) - 1,
-                    )
-                ]
-                for i in range(
-                    SPEAKER_EXCERPTS_PER_SPEAKER
-                )
-            ]
-
-        for line in selected:
-
-            output.append(
-                f"[{line['timestamp']}] "
-                f"{speaker}: "
-                f"{line['text']}"
-            )
 
     return "\n".join(output)
 
 
-def identify_speakers(
-    transcript: list[dict[str, Any]],
-) -> dict[str, str]:
-
-    excerpts = build_speaker_excerpts(
-        transcript
-    )
-
-    prompt = f"""
-You are identifying speakers in a Swedish podcast.
-
-The regular hosts are:
-
-Johan Forsstedt
-Erik Olofsson
-
-There may also be guests.
-
-IMPORTANT:
-
-The audio was diarised independently in short chunks.
-
-Therefore SPEAKER_00, SPEAKER_01 etc. are LOCAL labels.
-A label can change meaning in different parts of the episode.
-
-Do NOT assume that SPEAKER_00 is always one person.
-
-Use the actual dialogue to identify people.
-
-Look especially for:
-- introductions
-- people saying their own names
-- people addressing each other
-- interviewer/question patterns
-- guest introductions
-- recurring conversational roles
-
-Possible identities:
-
-Johan Forsstedt
-Erik Olofsson
-Guest
-Unknown
-
-Only identify a person when there is reasonable evidence.
-
-Return ONLY JSON.
-
-Example:
-
-{{
-  "assignments": [
-    {{
-      "speaker": "SPEAKER_00",
-      "identity": "Johan Forsstedt"
-    }}
-  ]
-}}
-
-Transcript excerpts:
-
-{excerpts}
-"""
-
-    print(
-        "Identifying speakers with Ollama..."
-    )
-
-    response = ask_ollama(
-        prompt,
-        temperature=0.0,
-    )
+def parse_speaker_assignments(
+    response: str,
+    count: int,
+) -> list[str] | None:
 
     response = clean_json_response(
         response
@@ -485,100 +429,297 @@ Transcript excerpts:
 
     except json.JSONDecodeError:
 
-        print(
-            "WARNING: speaker identification "
-            "did not return valid JSON.",
-            file=sys.stderr,
-        )
+        return None
 
-        print(
-            response,
-            file=sys.stderr,
-        )
+    assignments = data.get(
+        "assignments"
+    )
 
-        return {}
-
-    result = {}
-
-    for item in data.get(
-        "assignments",
-        [],
+    if not isinstance(
+        assignments,
+        list,
     ):
+        return None
 
-        speaker = item.get(
-            "speaker"
-        )
+    result = []
+
+    for item in assignments:
 
         identity = item.get(
             "identity"
         )
 
-        if speaker and identity:
+        if identity not in {
+            "Johan Forsstedt",
+            "Erik Olofsson",
+            "Guest",
+            "Unknown",
+        }:
 
-            result[speaker] = identity
+            identity = "Unknown"
+
+        result.append(identity)
+
+    if len(result) != count:
+        return None
 
     return result
+
+
+def identify_speakers_batch(
+    lines: list[dict[str, Any]],
+) -> list[str]:
+
+    text = speaker_batch_text(
+        lines
+    )
+
+    prompt = f"""
+Du ska identifiera vem som talar i en svensk podcast.
+
+De två ordinarie programledarna är:
+
+- Johan Forsstedt
+- Erik Olofsson
+
+Det kan också förekomma gäster.
+
+Det är mycket viktigt att förstå följande:
+
+Etiketterna SPEAKER_00, SPEAKER_01 osv kommer från
+automatisk talardiarisering och är ENDAST lokala etiketter.
+
+De är INTE globala identiteter.
+
+SPEAKER_00 kan alltså vara Johan i en del av avsnittet
+och Erik i en annan del.
+
+Du får därför INTE göra en regel som exempelvis
+"SPEAKER_00 = Johan".
+
+Identifiera i stället vem som sannolikt talar på VARJE rad
+utifrån dialogens innehåll och sammanhang.
+
+Använd särskilt dessa ledtrådar:
+
+- Om någon säger "Ja, Erik..." är personen som tilltalas Erik.
+- Om någon säger "Ja, Johan..." är personen som tilltalas Johan.
+- Om en person ställer en fråga till Erik är nästa svar ofta Erik.
+- Om en person ställer en fråga till Johan är nästa svar ofta Johan.
+- Om någon presenterar sig själv kan det identifiera personen.
+- Använd kontinuitet i samtalet.
+- Använd vem som brukar ställa frågor och vem som svarar.
+- Använd grammatiken och sammanhanget.
+- Om en rad är osäker ska du hellre välja Unknown än att hitta på.
+
+VIKTIGT:
+
+Det kan finnas fel i transkriberingen.
+Försök förstå den avsedda betydelsen trots mindre Whisper-fel.
+
+Möjliga identiteter är exakt:
+
+"Johan Forsstedt"
+"Erik Olofsson"
+"Guest"
+"Unknown"
+
+Du ska returnera EN identitet per rad.
+
+Returnera ENDAST giltig JSON i exakt detta format:
+
+{{
+  "assignments": [
+    {{
+      "identity": "Erik Olofsson"
+    }},
+    {{
+      "identity": "Johan Forsstedt"
+    }}
+  ]
+}}
+
+Antalet assignments måste vara exakt {len(lines)}.
+
+Ingen markdown.
+Ingen förklaring.
+Inga radnummer i JSON.
+
+Här är dialogen:
+
+{text}
+"""
+
+    response = ask_ollama(
+        prompt,
+        temperature=0.0,
+    )
+
+    assignments = parse_speaker_assignments(
+        response,
+        len(lines),
+    )
+
+    if assignments is None:
+
+        print(
+            "VARNING: kunde inte tolka "
+            "talarsvaret. Använder Unknown "
+            "för detta block.",
+            file=sys.stderr,
+        )
+
+        return [
+            "Unknown"
+            for _ in lines
+        ]
+
+    return assignments
+
+
+def identify_all_speakers(
+    transcript: list[dict[str, Any]],
+) -> None:
+
+    total = len(transcript)
+
+    for start in range(
+        0,
+        total,
+        SPEAKER_LINES_PER_CHUNK,
+    ):
+
+        end = min(
+            start
+            + SPEAKER_LINES_PER_CHUNK,
+            total,
+        )
+
+        batch = transcript[
+            start:end
+        ]
+
+        print(
+            f"Identifierar talare "
+            f"{start + 1}-{end}/{total}..."
+        )
+
+        identities = identify_speakers_batch(
+            batch
+        )
+
+        for line, identity in zip(
+            batch,
+            identities,
+        ):
+
+            line["identity"] = identity
 
 
 # ============================================================
 # Transcript correction
 # ============================================================
 
+def strip_unwanted_prefix(
+    text: str,
+) -> str:
+
+    text = text.strip()
+
+    # Ollama kan trots instruktionerna lägga till:
+    # 1. text
+    # 12. text
+    text = re.sub(
+        r"^\d+\.\s*",
+        "",
+        text,
+    )
+
+    # Ibland kan modellen sätta citattecken runt hela raden.
+    if (
+        len(text) >= 2
+        and text[0] == '"'
+        and text[-1] == '"'
+    ):
+
+        text = text[1:-1].strip()
+
+    return text
+
+
 def correct_transcript_batch(
     lines: list[dict[str, Any]],
 ) -> list[str]:
 
-    numbered = "\n".join(
-        f"{i + 1}. {line['text']}"
-        for i, line in enumerate(lines)
+    input_text = "\n".join(
+        line["text"]
+        for line in lines
     )
 
     prompt = f"""
-Correct this Swedish podcast transcription.
+Du korrekturläser en svensk automatisk transkribering från
+en podcast om löpning och maraton.
 
-Fix ONLY obvious speech-to-text errors.
+Din uppgift är mycket begränsad:
 
-Useful things to correct:
+Rätta ENDAST uppenbara fel som sannolikt kommer från
+tal-till-text-transkriberingen.
 
-- Swedish words
-- names
-- places
-- numbers
-- running terminology
-- marathon terminology
-- training terminology
-- obvious punctuation
-- obvious Whisper mistakes
+Du kan exempelvis rätta:
 
-Do NOT:
+- uppenbart felhörda svenska ord
+- uppenbart felstavade namn
+- löpartermer
+- maratintermer
+- träningsbegrepp
+- ortsnamn
+- siffror när sammanhanget tydligt visar vad som avses
+- uppenbara grammatiska fel som uppstår genom felskrivning
 
-- summarize
-- rewrite
-- shorten
-- combine lines
-- split lines
-- add information
-- remove information
-- change the speaker's style
+Var konservativ.
 
-If a line is already correct, return it unchanged.
+Om texten verkar rimlig ska du lämna den oförändrad.
 
-There are exactly {len(lines)} input lines.
+Ändra INTE:
 
-Return exactly {len(lines)} output lines.
+- talarens personliga språk
+- ordval som bara låter lite talspråkliga
+- innehållet
+- betydelsen
+- längden
+- ordningen
 
-Return ONLY the corrected text.
+Du får INTE:
 
-Do not include:
-- line numbers
-- timestamps
-- speaker names
-- explanations
+- sammanfatta
+- skriva om
+- förbättra stilen
+- lägga till information
+- ta bort information
+- slå ihop rader
+- dela upp rader
+- kommentera ändringarna
+
+Det finns exakt {len(lines)} rader i indata.
+
+Du måste returnera exakt {len(lines)} rader
+i exakt samma ordning.
+
+Returnera ENDAST de korrigerade raderna.
+
+Skriv INTE:
+
+- radnummer
+- tidsstämplar
+- talarnamn
+- punktlistor
+- kommentarer
+- förklaringar
 - markdown
 
-INPUT:
+INDATA:
 
-{numbered}
+{input_text}
 """
 
     response = ask_ollama(
@@ -587,7 +728,7 @@ INPUT:
     )
 
     corrected = [
-        line.strip()
+        strip_unwanted_prefix(line)
         for line in response.splitlines()
         if line.strip()
     ]
@@ -595,10 +736,10 @@ INPUT:
     if len(corrected) != len(lines):
 
         print(
-            f"WARNING: Ollama returned "
-            f"{len(corrected)} lines for "
-            f"{len(lines)} inputs. "
-            f"Keeping originals.",
+            f"VARNING: Ollama returnerade "
+            f"{len(corrected)} rader för "
+            f"{len(lines)} indata-rader. "
+            f"Behåller originalet för blocket.",
             file=sys.stderr,
         )
 
@@ -613,11 +754,16 @@ INPUT:
 def correct_transcript(
     transcript: list[dict[str, Any]],
     progress_file: Path,
+    force: bool,
 ) -> None:
 
     total = len(transcript)
 
     completed = 0
+
+    if force and progress_file.exists():
+
+        progress_file.unlink()
 
     if progress_file.exists():
 
@@ -636,13 +782,38 @@ def correct_transcript(
                 )
             )
 
-            if completed > total:
-                completed = 0
-
-            print(
-                f"Resuming transcript correction "
-                f"from line {completed + 1}."
+            saved_transcript = data.get(
+                "transcript"
             )
+
+            if (
+                isinstance(
+                    saved_transcript,
+                    list,
+                )
+                and len(saved_transcript)
+                == total
+            ):
+
+                for i in range(
+                    completed
+                ):
+
+                    if i < len(
+                        saved_transcript
+                    ):
+
+                        transcript[i][
+                            "text"
+                        ] = saved_transcript[i].get(
+                            "text",
+                            transcript[i]["text"],
+                        )
+
+                print(
+                    f"Fortsätter korrektur från "
+                    f"rad {completed + 1}."
+                )
 
         except Exception:
 
@@ -665,7 +836,7 @@ def correct_transcript(
         ]
 
         print(
-            f"Correcting transcript lines "
+            f"Korrigerar transkript "
             f"{start + 1}-{end}/{total}..."
         )
 
@@ -694,10 +865,10 @@ def correct_transcript(
 
 
 # ============================================================
-# Chapter candidates
+# Topic windows
 # ============================================================
 
-def transcript_windows(
+def make_topic_windows(
     transcript: list[dict[str, Any]],
 ) -> list[list[dict[str, Any]]]:
 
@@ -707,7 +878,10 @@ def transcript_windows(
     windows = []
 
     current = []
-    window_start = transcript[0]["seconds"]
+
+    window_start = transcript[
+        0
+    ]["seconds"]
 
     for line in transcript:
 
@@ -715,14 +889,16 @@ def transcript_windows(
             current
             and line["seconds"]
             - window_start
-            >= CHAPTER_WINDOW_SECONDS
+            >= TOPIC_WINDOW_SECONDS
         ):
 
             windows.append(current)
 
             current = []
 
-            window_start = line["seconds"]
+            window_start = line[
+                "seconds"
+            ]
 
         current.append(line)
 
@@ -732,7 +908,11 @@ def transcript_windows(
     return windows
 
 
-def analyse_chapter_window(
+# ============================================================
+# Topic change detection
+# ============================================================
+
+def analyse_topic_window(
     lines: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
 
@@ -742,81 +922,96 @@ def analyse_chapter_window(
         for line in lines
     )
 
-    start_timestamp = lines[0]["timestamp"]
-
     prompt = f"""
-You are analysing one section of a Swedish running podcast.
+Du analyserar en del av en svensk podcast om löpning,
+maraton och träning.
 
-Identify the MAIN subject discussed in this section.
+Bestäm vad som är HUVUDÄMNET i den här delen.
 
-Do not summarize the whole section.
+Det viktiga är inte att hitta på en fin rubrik.
+Det viktiga är att korrekt beskriva vad personerna faktiskt
+pratar om.
 
-Find the most useful chapter title.
+Ge:
 
-The title should be short, specific and descriptive.
+1. Ett kort ämne.
+2. En kort beskrivning av ämnet.
 
-Examples:
+Returnera ENDAST giltig JSON:
 
-"Planering av maratonträningen"
-"Intervallträning inför maraton"
-"Eriks mål för säsongen"
-"Träningsmängd och återhämtning"
+{{
+  "topic": "kort ämne",
+  "description": "kort beskrivning"
+}}
 
-If this section is mostly continuation of another topic,
-still describe what is actually discussed.
+Hitta inte på information som inte finns i texten.
 
-Return ONLY one line in this exact format:
-
-TITLE: your chapter title
-
-Section starts at:
-
-{start_timestamp}
-
-Transcript:
+Transkript:
 
 {text}
 """
 
     response = ask_ollama(
         prompt,
-        temperature=0.1,
+        temperature=0.0,
     )
 
-    for line in response.splitlines():
+    response = clean_json_response(
+        response
+    )
 
-        if line.upper().startswith(
-            "TITLE:"
-        ):
+    try:
 
-            title = line.split(
-                ":",
-                1,
-            )[1].strip()
+        data = json.loads(
+            response
+        )
 
-            if title:
-                return {
-                    "timestamp": start_timestamp,
-                    "seconds": lines[0]["seconds"],
-                    "title": title,
-                }
+    except json.JSONDecodeError:
 
-    return None
+        return None
+
+    topic = str(
+        data.get(
+            "topic",
+            "",
+        )
+    ).strip()
+
+    description = str(
+        data.get(
+            "description",
+            "",
+        )
+    ).strip()
+
+    if not topic:
+        return None
+
+    return {
+        "timestamp": lines[0][
+            "timestamp"
+        ],
+        "seconds": lines[0][
+            "seconds"
+        ],
+        "topic": topic,
+        "description": description,
+    }
 
 
-def generate_chapter_candidates(
+def analyse_all_topic_windows(
     transcript: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
 
-    windows = transcript_windows(
+    windows = make_topic_windows(
         transcript
     )
 
-    candidates = []
+    results = []
 
     print(
-        f"Generating chapter candidates "
-        f"from {len(windows)} sections..."
+        f"Analyserar {len(windows)} "
+        f"ämnesdelar..."
     )
 
     for i, window in enumerate(
@@ -825,94 +1020,262 @@ def generate_chapter_candidates(
     ):
 
         print(
-            f"  Analysing section "
+            f"  Ämnesdel "
             f"{i}/{len(windows)} "
             f"({window[0]['timestamp']})..."
         )
 
-        candidate = analyse_chapter_window(
+        result = analyse_topic_window(
             window
         )
 
-        if candidate:
-            candidates.append(
-                candidate
+        if result:
+            results.append(
+                result
             )
 
-    return candidates
+    return results
 
 
 # ============================================================
-# Chapter selection
+# Merge adjacent topics
 # ============================================================
 
-def select_chapters(
-    candidates: list[dict[str, Any]],
+def merge_topics(
+    topics: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
 
-    if not candidates:
+    if not topics:
+        return []
+
+    merged = [
+        dict(topics[0])
+    ]
+
+    for current in topics[1:]:
+
+        previous = merged[-1]
+
+        # Låt Ollama avgöra om två intilliggande
+        # delar egentligen handlar om samma sak.
+        prompt = f"""
+Du avgör om två intilliggande delar av en svensk podcast
+handlar om samma huvudämne.
+
+Del 1:
+Ämne: {previous['topic']}
+Beskrivning: {previous['description']}
+
+Del 2:
+Ämne: {current['topic']}
+Beskrivning: {current['description']}
+
+Svara ENDAST med:
+
+SAMMA
+
+eller
+
+NYTT
+
+Använd SAMMA om delarna huvudsakligen handlar om samma
+sak även om de använder lite olika formuleringar.
+
+Använd NYTT om samtalet tydligt har gått över till ett nytt
+huvudämne.
+"""
+
+        response = ask_ollama(
+            prompt,
+            temperature=0.0,
+        ).strip().upper()
+
+        if response.startswith(
+            "SAMMA"
+        ):
+
+            # Behåll starttiden från det första ämnet
+            # och slå ihop beskrivningarna.
+            previous["description"] = (
+                previous["description"]
+                + " "
+                + current["description"]
+            )
+
+        else:
+
+            merged.append(
+                dict(current)
+            )
+
+    return merged
+
+
+# ============================================================
+# Final chapter titles
+# ============================================================
+
+def make_chapter_title(
+    topic: dict[str, Any],
+) -> str:
+
+    prompt = f"""
+Skapa en kort och naturlig svensk kapitelrubrik för en
+podcast.
+
+Ämne:
+{topic['topic']}
+
+Beskrivning:
+{topic['description']}
+
+Rubriken ska:
+
+- vara kort
+- vara konkret
+- beskriva vad som faktiskt diskuteras
+- fungera som en Markdown-rubrik
+- inte vara en hel mening om det inte behövs
+
+Exempel:
+
+"Eriks träningsstart"
+"30-kilometerspasset"
+"Träningsmängd och intensitet"
+"Intervallträning inför maraton"
+"Grundträning och MAF-test"
+
+Returnera ENDAST rubriken.
+
+Ingen punkt.
+Inga citattecken.
+Ingen förklaring.
+"""
+
+    title = ask_ollama(
+        prompt,
+        temperature=0.1,
+    ).strip()
+
+    title = title.strip(
+        '"'
+    ).strip()
+
+    if title.startswith(
+        "Rubrik:"
+    ):
+
+        title = title.split(
+            ":",
+            1,
+        )[1].strip()
+
+    return title
+
+
+def select_chapters(
+    topics: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+
+    if not topics:
         return []
 
     selected = []
 
-    for candidate in candidates:
+    for topic in topics:
 
         if not selected:
 
-            selected.append(candidate)
+            selected.append(
+                topic
+            )
 
             continue
 
         gap = (
-            candidate["seconds"]
+            topic["seconds"]
             - selected[-1]["seconds"]
         )
 
         if gap < MIN_CHAPTER_SECONDS:
 
-            # Keep the candidate that looks more
-            # specific rather than blindly adding both.
+            # Om ämnesbytet sker för snabbt efter
+            # föregående kapitel är det oftast bättre
+            # att låta föregående kapitel fortsätta.
             continue
 
-        selected.append(candidate)
+        selected.append(
+            topic
+        )
 
-    return selected
+    chapters = []
+
+    for topic in selected:
+
+        title = make_chapter_title(
+            topic
+        )
+
+        if not title:
+
+            title = topic["topic"]
+
+        chapters.append(
+            {
+                "timestamp": topic[
+                    "timestamp"
+                ],
+                "seconds": topic[
+                    "seconds"
+                ],
+                "title": title,
+            }
+        )
+
+    return chapters
 
 
 # ============================================================
-# Topics and keywords
+# Episode topics / keywords
 # ============================================================
+
+def sample_transcript(
+    transcript: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+
+    if len(transcript) <= TOPIC_SAMPLE_LINES:
+        return transcript
+
+    result = []
+
+    step = (
+        len(transcript)
+        / TOPIC_SAMPLE_LINES
+    )
+
+    for i in range(
+        TOPIC_SAMPLE_LINES
+    ):
+
+        index = min(
+            int(i * step),
+            len(transcript) - 1,
+        )
+
+        result.append(
+            transcript[index]
+        )
+
+    return result
+
 
 def generate_topics_keywords(
     transcript: list[dict[str, Any]],
 ) -> tuple[list[str], list[str]]:
 
-    # Use representative lines instead of the whole episode.
-    #
-    # This keeps the prompt small enough for gemma3:4b.
-
-    if len(transcript) <= 100:
-
-        selected = transcript
-
-    else:
-
-        count = 100
-
-        step = (
-            len(transcript)
-            / count
-        )
-
-        selected = [
-            transcript[
-                min(
-                    int(i * step),
-                    len(transcript) - 1,
-                )
-            ]
-            for i in range(count)
-        ]
+    selected = sample_transcript(
+        transcript
+    )
 
     text = "\n".join(
         f"[{line['timestamp']}] "
@@ -921,78 +1284,103 @@ def generate_topics_keywords(
     )
 
     prompt = f"""
-Identify the main topics and useful keywords in this Swedish
-running podcast transcript.
+Identifiera de viktigaste ämnena och nyckelorden i denna
+svenska podcast.
 
-Only use information actually present in the text.
+Podcasten handlar huvudsakligen om löpning, maraton och
+träning.
 
-Return exactly this format:
+Använd endast information som faktiskt finns i texten.
 
-TOPICS: topic 1 | topic 2 | topic 3
-KEYWORDS: keyword 1 | keyword 2 | keyword 3
+ÄMNEN ska vara övergripande ämnen som är relevanta för
+hela avsnittet.
 
-Give 5-10 topics.
+NYCKELORD ska vara konkreta personer, träningsformer,
+begrepp, lopp, distanser eller andra viktiga saker som
+faktiskt nämns.
 
-Give 10-20 useful keywords.
+Undvik generiska ord som:
 
-Do not explain anything else.
+"podcast"
+"träning"
+"löpning"
 
-Transcript:
+om de inte tillför något.
+
+Returnera ENDAST giltig JSON i detta format:
+
+{{
+  "topics": [
+    "ämne 1",
+    "ämne 2",
+    "ämne 3"
+  ],
+  "keywords": [
+    "nyckelord 1",
+    "nyckelord 2",
+    "nyckelord 3"
+  ]
+}}
+
+Ge ungefär 5-8 ämnen och 8-15 nyckelord.
+
+Transkript:
 
 {text}
 """
 
     print(
-        "Generating topics and keywords..."
+        "Skapar ämnen och nyckelord..."
     )
 
     response = ask_ollama(
         prompt,
-        temperature=0.1,
+        temperature=0.0,
     )
 
-    topics = []
-    keywords = []
+    response = clean_json_response(
+        response
+    )
 
-    for line in response.splitlines():
+    try:
 
-        upper = line.upper()
+        data = json.loads(
+            response
+        )
 
-        if upper.startswith(
-            "TOPICS:"
-        ):
+    except json.JSONDecodeError:
 
-            value = line.split(
-                ":",
-                1,
-            )[1]
+        print(
+            "VARNING: kunde inte tolka "
+            "ämnen/nyckelord.",
+            file=sys.stderr,
+        )
 
-            topics = [
-                x.strip()
-                for x in value.split("|")
-                if x.strip()
-            ]
+        return [], []
 
-        elif upper.startswith(
-            "KEYWORDS:"
-        ):
+    topics = [
+        str(x).strip()
+        for x in data.get(
+            "topics",
+            [],
+        )
+        if str(x).strip()
+    ]
 
-            value = line.split(
-                ":",
-                1,
-            )[1]
-
-            keywords = [
-                x.strip()
-                for x in value.split("|")
-                if x.strip()
-            ]
+    keywords = [
+        str(x).strip()
+        for x in data.get(
+            "keywords",
+            [],
+        )
+        if str(x).strip()
+    ]
 
     return topics, keywords
 
 
 # ============================================================
-# Markdown
+# Markdown helpers
 # ============================================================
 
 def markdown_anchor(
@@ -1008,6 +1396,7 @@ def markdown_anchor(
     }
 
     for old, new in replacements.items():
+
         text = text.replace(
             old,
             new,
@@ -1028,6 +1417,30 @@ def markdown_anchor(
     return text
 
 
+def find_chapter_before(
+    seconds: float,
+    chapters: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+
+    result = None
+
+    for chapter in chapters:
+
+        if chapter["seconds"] <= seconds:
+
+            result = chapter
+
+        else:
+
+            break
+
+    return result
+
+
+# ============================================================
+# Markdown output
+# ============================================================
+
 def build_markdown(
     original: str,
     transcript: list[dict[str, Any]],
@@ -1042,7 +1455,11 @@ def build_markdown(
 
     for line in original_lines:
 
-        if line.strip() == "## Kapitel":
+        if line.strip() in {
+            "## Kapitel",
+            "## Transkription",
+        }:
+
             break
 
         prefix.append(line)
@@ -1053,9 +1470,9 @@ def build_markdown(
     # Topics
     # --------------------------------------------------------
 
-    if topics:
+    output.append("")
 
-        output.append("")
+    if topics:
 
         output.append(
             "**Ämnen:** "
@@ -1077,11 +1494,6 @@ def build_markdown(
     output.append("## Kapitel")
     output.append("")
 
-    chapter_lookup = {
-        c["timestamp"]: c
-        for c in chapters
-    }
-
     for chapter in chapters:
 
         timestamp = chapter[
@@ -1093,8 +1505,8 @@ def build_markdown(
         ]
 
         output.append(
-            f"- [{timestamp} – {title}]"
-            f"(#{markdown_anchor(title)})"
+            f"- [{timestamp}] "
+            f"{title}"
         )
 
     # --------------------------------------------------------
@@ -1105,17 +1517,20 @@ def build_markdown(
     output.append("## Transkription")
     output.append("")
 
+    previous_chapter = None
+
     for line in transcript:
 
-        timestamp = line[
-            "timestamp"
-        ]
-
-        chapter = chapter_lookup.get(
-            timestamp
+        chapter = find_chapter_before(
+            line["seconds"],
+            chapters,
         )
 
-        if chapter:
+        if (
+            chapter is not None
+            and chapter
+            is not previous_chapter
+        ):
 
             output.append("")
 
@@ -1125,16 +1540,24 @@ def build_markdown(
 
             output.append("")
 
+            previous_chapter = chapter
+
         identity = line.get(
-            "identity"
+            "identity",
+            "Unknown",
         )
 
-        if not identity:
+        if identity not in {
+            "Johan Forsstedt",
+            "Erik Olofsson",
+            "Guest",
+            "Unknown",
+        }:
 
             identity = "Unknown"
 
         output.append(
-            f"**[{timestamp}]** "
+            f"**[{line['timestamp']}]** "
             f"{identity}: "
             f"{line['text']}"
         )
@@ -1145,7 +1568,7 @@ def build_markdown(
 
 
 # ============================================================
-# Episode processing
+# Process one episode
 # ============================================================
 
 def process_episode(
@@ -1176,11 +1599,15 @@ def process_episode(
         + ".postprocess-progress.json"
     )
 
-    if output_file.exists() and not force:
+    if (
+        output_file.exists()
+        and not force
+    ):
 
         print(
-            f"Skipping episode {episode_number}: "
-            f"{output_file.name} already exists."
+            f"Hoppar över avsnitt "
+            f"{episode_number}: "
+            f"{output_file.name} finns redan."
         )
 
         return
@@ -1188,7 +1615,7 @@ def process_episode(
     print()
     print("=" * 70)
     print(
-        f"Episode {episode_number}: "
+        f"Avsnitt {episode_number}: "
         f"{markdown_file.name}"
     )
     print("=" * 70)
@@ -1208,12 +1635,12 @@ def process_episode(
     if not transcript:
 
         raise RuntimeError(
-            "No transcript lines found."
+            "Hittade inga transkriptrader."
         )
 
     print(
-        f"Loaded {len(transcript)} "
-        f"transcript lines."
+        f"Laddade {len(transcript)} "
+        f"transkriptrader."
     )
 
     # --------------------------------------------------------
@@ -1225,11 +1652,11 @@ def process_episode(
     )
 
     print(
-        f"Loaded {len(diarization)} "
-        f"diarization segments."
+        f"Laddade {len(diarization)} "
+        f"diariseringssegment."
     )
 
-    assign_speakers(
+    assign_local_speakers(
         transcript,
         diarization,
     )
@@ -1238,58 +1665,53 @@ def process_episode(
     # Speaker identification
     # --------------------------------------------------------
 
-    assignments = identify_speakers(
+    print()
+    print(
+        "Identifierar talare lokalt "
+        "i dialogblock..."
+    )
+
+    identify_all_speakers(
         transcript
     )
 
-    print()
-    print("Speaker assignments:")
-
-    for speaker, identity in sorted(
-        assignments.items()
-    ):
-
-        print(
-            f"  {speaker} -> {identity}"
-        )
-
-    for line in transcript:
-
-        local = line.get(
-            "local_speaker",
-            "UNKNOWN",
-        )
-
-        line["identity"] = assignments.get(
-            local,
-            "Unknown",
-        )
-
     # --------------------------------------------------------
-    # Correction
+    # Transcript correction
     # --------------------------------------------------------
 
     print()
+    print(
+        "Korrigerar Whisper-transkript..."
+    )
 
     correct_transcript(
         transcript,
         progress_file,
+        force,
     )
 
     # --------------------------------------------------------
-    # Chapters
+    # Topic analysis
     # --------------------------------------------------------
 
-    candidates = generate_chapter_candidates(
-        transcript
+    print()
+
+    topic_windows = (
+        analyse_all_topic_windows(
+            transcript
+        )
+    )
+
+    merged_topics = merge_topics(
+        topic_windows
     )
 
     chapters = select_chapters(
-        candidates
+        merged_topics
     )
 
     # --------------------------------------------------------
-    # Topics / keywords
+    # Episode topics / keywords
     # --------------------------------------------------------
 
     topics, keywords = (
@@ -1299,7 +1721,7 @@ def process_episode(
     )
 
     # --------------------------------------------------------
-    # Output
+    # Build output
     # --------------------------------------------------------
 
     processed = build_markdown(
@@ -1315,10 +1737,13 @@ def process_episode(
         encoding="utf-8",
     )
 
+    # --------------------------------------------------------
+    # Metadata
+    # --------------------------------------------------------
+
     metadata = {
         "episode": episode_number,
         "ollama_model": OLLAMA_MODEL,
-        "speaker_assignments": assignments,
         "chapters": chapters,
         "topics": topics,
         "keywords": keywords,
@@ -1333,17 +1758,21 @@ def process_episode(
         encoding="utf-8",
     )
 
-    # Correction progress is no longer needed.
+    # --------------------------------------------------------
+    # Cleanup
+    # --------------------------------------------------------
+
     if progress_file.exists():
+
         progress_file.unlink()
 
     print()
     print(
-        f"Written: {output_file.name}"
+        f"Skrev: {output_file.name}"
     )
 
     print(
-        f"Written: {metadata_file.name}"
+        f"Skrev: {metadata_file.name}"
     )
 
 
@@ -1357,34 +1786,34 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Post-process Maratonlabbet "
-            "transcripts using Ollama."
+            "Efterbehandla Maratonlabbet-"
+            "transkript med Ollama."
         )
     )
 
     parser.add_argument(
         "--only",
         type=int,
-        help="Process only one episode.",
+        help="Bearbeta endast ett avsnitt.",
     )
 
     parser.add_argument(
         "--from",
         dest="from_episode",
         type=int,
-        help="Process from this episode onward.",
+        help="Bearbeta från och med detta avsnitt.",
     )
 
     parser.add_argument(
         "--model",
         default=OLLAMA_MODEL,
-        help="Ollama model to use.",
+        help="Ollama-modell.",
     )
 
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite existing output.",
+        help="Bearbeta om även om output redan finns.",
     )
 
     args = parser.parse_args()
@@ -1440,13 +1869,13 @@ def main() -> None:
     if not episodes:
 
         print(
-            "No episodes found."
+            "Hittade inga avsnitt."
         )
 
         return
 
     print(
-        f"Using Ollama model: "
+        f"Använder Ollama-modell: "
         f"{OLLAMA_MODEL}"
     )
 
@@ -1462,7 +1891,7 @@ def main() -> None:
         except KeyboardInterrupt:
 
             print(
-                "\nInterrupted."
+                "\nAvbrutet."
             )
 
             sys.exit(1)
@@ -1470,15 +1899,12 @@ def main() -> None:
         except Exception as exc:
 
             print(
-                f"\nERROR processing episode "
-                f"{episode_number}: {exc}",
+                f"\nFEL vid bearbetning av "
+                f"avsnitt {episode_number}: "
+                f"{exc}",
                 file=sys.stderr,
             )
-
-            # Continue to next episode.
-            continue
 
 
 if __name__ == "__main__":
     main()
-
