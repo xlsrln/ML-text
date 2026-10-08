@@ -1,4 +1,3 @@
-```python
 import argparse
 import json
 import re
@@ -650,14 +649,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
-This version should get past the specific failure you just hit. The important change is:
-
-```python
-"format": OUTPUT_SCHEMA
-```
-
-rather than simply `"format": "json"`.
-
-One caveat: **I deliberately kept this version to one Ollama call for the whole episode**, so let's first verify that Qwen reliably returns the correct structure. Once that works, I'd change the architecture to chunk the transcript and do a second synthesis pass — that will give you substantially better chapters and summaries on long episodes.
