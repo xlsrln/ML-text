@@ -1,0 +1,134 @@
+{
+  "model": "qwen3:8b",
+  "chunks": 9,
+  "successful_chunks": 9,
+  "episode_summary": "Podcasten behandlar olika aspekter av löpning och maratonträning, med fokus på träningsplanering, målsättning, träningsmetoder och hur man stegrar upp träningen. Innehållet täcker även viktiga teman som skador, återhämtning, träningsintensitet, träningsstruktur och hur man använder olika pass för att bygga upp uthållighet. Det finns även en diskussion om hur man kan testa olika fart och längd i träningen, samt hur man delar erfarenheter på sociala medier. En del av innehållet handlar också om hur klubben Huddinge AIS och Marais Running Club påverkar träningsplaneringen och prestationen.",
+  "chapters": [
+    {
+      "timestamp": "00:00",
+      "title": "Inledning och målsättning",
+      "summary": "Inledning till podcasten där målsättning och träningsplanering diskuteras. Fokus ligger på att sätta realistiska men utmanande mål och att jobba hårt för att uppnå dem."
+    },
+    {
+      "timestamp": "03:10",
+      "title": "Träningsplanering och mål",
+      "summary": "Diskussion om hur man stegrar upp träningen från fyra-fem mil till åtta-nio mil per vecka, med fokus på att bygga upp uthållighet och undvika skador."
+    },
+    {
+      "timestamp": "05:30",
+      "title": "Träningsintensitet och skador",
+      "summary": "Hur man hanterar träningsintensitet och undviker skador genom att ha rätt balans mellan intensitet och återhämtning."
+    },
+    {
+      "timestamp": "07:20",
+      "title": "Klubbträning och Huddinge AIS",
+      "summary": "Beskrivning av hur klubben Huddinge AIS påverkade träningsplaneringen och prestationen, med fokus på gruppträning och styrka i samlaget."
+    },
+    {
+      "timestamp": "09:10",
+      "title": "Träningsstruktur och pass",
+      "summary": "Hur träningen var uppbyggd i veckan med olika pass och lätt distans, med fokus på att bygga upp aerob kapacitet."
+    },
+    {
+      "timestamp": "11:00",
+      "title": "Träning med intervall och tröskel",
+      "summary": "Beskrivning av hur träningen på tisdagar och torsdagar skedde med intervall och tröskelträning för att förbättra uthållighet."
+    },
+    {
+      "timestamp": "12:30",
+      "title": "Långpass och maratonprestation",
+      "summary": "Hur långpass påverkade maratonprestationen och hur personen hanterade intensiteten under maraton."
+    },
+    {
+      "timestamp": "14:10",
+      "title": "Träningens volym och förändringar",
+      "summary": "Hur träningens volym förändrades från året innan och hur det påverkade prestationen."
+    },
+    {
+      "timestamp": "16:00",
+      "title": "Stegringsplan och träning i första hand",
+      "summary": "Diskussion om att stegra upp distansen från fyra-fem mil till åtta-nio mil och hur man ska göra det."
+    },
+    {
+      "timestamp": "18:20",
+      "title": "Eriks pers och Camilla Elovssons intervju",
+      "summary": "Erik berättar om sin egen prestation och nämner Camilla Elovssons intervju där hon pratar om sin träning och skador."
+    },
+    {
+      "timestamp": "20:00",
+      "title": "Träningsmetoder och återhämtning",
+      "summary": "Diskussion om att ha lugna pass för att bygga aerob kapacitet och att undvika att köra för hårt utan återhämtning."
+    },
+    {
+      "timestamp": "22:00",
+      "title": "Förändringar i träning och mål",
+      "summary": "Erik nämner att han har tagit in Camilla Elovssons råd och planerar att stegra upp sin distans och ha tre nyckelpasser i veckan."
+    },
+    {
+      "timestamp": "24:00",
+      "title": "Gruppträning och distanspass",
+      "summary": "Erik berättar om sin gruppträning i Paris och hur han använder distanspass för återhämtning."
+    },
+    {
+      "timestamp": "26:00",
+      "title": "Sammanfattning av målsättningar och hur man hittar ett eget mål",
+      "summary": "En kort sammanfattning av vad som har lärt sig om målsättningar, med fokus på att hitta ett eget mål som man är övertygad om att uppnå."
+    },
+    {
+      "timestamp": "28:00",
+      "title": "Slutsammanfattning av målsättningar och förberedelser till nästa vecka",
+      "summary": "Sammanfattning av diskussionen om målsättningar och förberedelser till nästa vecka där träningsplanering kommer att diskuteras."
+    },
+    {
+      "timestamp": "30:00",
+      "title": "Testa olika fart och längd i löpning",
+      "summary": "En del av innehållet handlar om att testa olika fart och längd i löpning, t.ex. 12 km i fem fart och 5-6 km i marafart."
+    },
+    {
+      "timestamp": "32:00",
+      "title": "Delning av erfarenheter på sociala medier",
+      "summary": "Det finns tips om att dela erfarenheter på Facebook och Instagram, samt att skriva tips och frågor till podcasten."
+    },
+    {
+      "timestamp": "34:00",
+      "title": "Följ tränarens Strava-profil",
+      "summary": "Det finns en uppmaning att följa tränarens Strava-profil och kommentera om träningsintensiteten."
+    },
+    {
+      "timestamp": "36:00",
+      "title": "Framtidens träning och inspiration",
+      "summary": "Det finns en förhoppning om att diskutera löparens träning i framtiden, samt tips om att springa på löparen."
+    },
+    {
+      "timestamp": "38:00",
+      "title": "Avslutande ord och förhoppning om nästa avsnitt",
+      "summary": "Podcasten avslutas med ett tack och en förhoppning om att ha ett nästa avsnitt om träningsplanering."
+    }
+  ],
+  "keywords": [
+    "löpning",
+    "maratonträning",
+    "träningsfysiologi",
+    "stegringsplan",
+    "skador",
+    "kvalitetspass",
+    "återhämtning",
+    "träningsintensitet",
+    "långsiktiga mål",
+    "gruppträning",
+    "Marais Running Club",
+    "Camilla Elovsson",
+    "träningsstruktur",
+    "klubbträning",
+    "Huddinge AIS",
+    "träningscyklar",
+    "vision board",
+    "Strava",
+    "sociala medier",
+    "fart",
+    "längd",
+    "mål",
+    "långpass",
+    "nyckelpasser"
+  ]
+}

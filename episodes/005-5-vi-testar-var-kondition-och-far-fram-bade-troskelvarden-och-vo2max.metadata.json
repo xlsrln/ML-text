@@ -1,0 +1,150 @@
+{
+  "model": "qwen3:8b",
+  "chunks": 9,
+  "successful_chunks": 9,
+  "episode_summary": "Podcasten följer en löpare genom en långsiktig träningsprocess med fokus på att förbättra konditionen, tröskelvärden och VO2max för att nå maximal potential i maratonträningen. Den diskuterar olika träningsmetoder, som tröskelträning, långpass, ZON2 och alternativ träning, samt hur dessa kan anpassas för att minska överbelastning och öka effektiviteten. En del av innehållet handlar också om hur man kan testa tröskel och maxpuls själv, samt hur man kan använda löpband för att göra hårdare intervaller mindre skonsamma. I samband med detta nämns även planerade maratonmål, som i Frankfurt, och hur träningsprogrammet kan anpassas för att förbereda sig för dessa. En del av avsnittet fokuserar också på att följa en löpare under OS, göra intervjuer och jobba med rehab och hälsa för att förbättra prestationen och livskvaliteten.",
+  "chapters": [
+    {
+      "timestamp": "00:00",
+      "title": "Inledning och träningsplanering",
+      "summary": "Inledning till podcasten med en översikt över träningsplanering och hur tröskelvärden och VO2max kan användas för att förbättra konditionen och prestationen i maratonträningen."
+    },
+    {
+      "timestamp": "05:00",
+      "title": "Tröskelvärden och VO2max",
+      "summary": "Fokus på hur tröskelvärden och VO2max påverkar träningsplaneringen och hur dessa kan mätas och användas för att förbättra aerobatrusken och konditionen."
+    },
+    {
+      "timestamp": "10:00",
+      "title": "Tröskelträning och anaerobatröskel",
+      "summary": "Diskussion om tröskelträning, anaerobatröskel och hur dessa påverkar träningsintensiteten och hur man kan anpassa träningsplaneringen för att minska belastningen."
+    },
+    {
+      "timestamp": "15:00",
+      "title": "Distansträning och polarisering",
+      "summary": "Fokus på distansträning, polarisering och hur dessa metoder kan användas för att förbättra konditionen och minska tröskelträning."
+    },
+    {
+      "timestamp": "20:00",
+      "title": "Alternativ träning och VO2max",
+      "summary": "Diskussion om hur alternativ träning, som cykling, kan användas för att öka VO2max och minska överbelastning i löpning."
+    },
+    {
+      "timestamp": "25:00",
+      "title": "Löpband och träningsintensitet",
+      "summary": "Hur löpband kan användas för att göra hårdare intervaller mindre skonsamma och hur träningsintensitet kan anpassas för att minska risk för skador."
+    },
+    {
+      "timestamp": "30:00",
+      "title": "Träningsperiodisering och träningsfysiologi",
+      "summary": "Fokus på träningsperiodisering, träningsfysiologi och hur olika träningspass kan kombineras för att maximera prestationen och hälsan."
+    },
+    {
+      "timestamp": "35:00",
+      "title": "Testresultat och träningsplanering",
+      "summary": "Hur testresultat har påverkat träningsplaneringen och hur tröskelvärden och VO2max har använts för att anpassa träningsintensiteten."
+    },
+    {
+      "timestamp": "37:05",
+      "title": "Träningsplanering och tidseffektivitet",
+      "summary": "Diskussion om hur man kan öka träningstiden och hur olika pass kan anpassas för att maximera effektivitet."
+    },
+    {
+      "timestamp": "38:00",
+      "title": "Förändring i långpassstrategi",
+      "summary": "Beslut att öka antalet långpass och diskussion om hur de ska planeras och utformas."
+    },
+    {
+      "timestamp": "40:20",
+      "title": "Framtidens träning och motivation",
+      "summary": "Förutsägelser om hur träningen kommer se ut och hur löparen känner sig motiverad att följa den."
+    },
+    {
+      "timestamp": "41:01",
+      "title": "Polariserad träning och zoner",
+      "summary": "Diskussion om polariserad träning, zoner och hur man ska undvika tröskelträning för att fokusera på VO2 max."
+    },
+    {
+      "timestamp": "43:38",
+      "title": "Alternativträning och VO2 max",
+      "summary": "Fokus på hur alternativträning kan användas för att öka VO2 max och hur det kan kombineras med olika idrotter."
+    },
+    {
+      "timestamp": "44:04",
+      "title": "Tips för att lägga tid på löpning och alternativ träning",
+      "summary": "Tips om att inte lägga för mycket tid på löpning och istället använda alternativ träning."
+    },
+    {
+      "timestamp": "44:23",
+      "title": "Viktigt att göra långpass, ZON2 och tröskelträning",
+      "summary": "Närvarande träningsmetoder som långpass, ZON2 och tröskelträning för att förbättra energieffektivitet."
+    },
+    {
+      "timestamp": "44:48",
+      "title": "Förutsättningar för maxintervall och överbelastning",
+      "summary": "Förutsättningar för att köra maxintervall och hur det kan påverka kroppen."
+    },
+    {
+      "timestamp": "45:00",
+      "title": "Polariserad träning och alternativ träning",
+      "summary": "Föreslag på polariserad träning och användning av cykel för att undvika överbelastning."
+    },
+    {
+      "timestamp": "46:03",
+      "title": "Planerad maratonträning och träningsprogram",
+      "summary": "Planerad maratonträning med fokus på underhållsträning, styrka och rehab."
+    },
+    {
+      "timestamp": "47:00",
+      "title": "Veckovisa träningsfokus och träningsprogram",
+      "summary": "Föreslag på att variera träningsfokus mellan lugn distans och hårdare intervall."
+    },
+    {
+      "timestamp": "48:02",
+      "title": "Tips om att göra tröskel- och maxpulstest själv",
+      "summary": "Tips om hur man kan göra tröskel- och maxpulstest själv med hjälp av enkla metoder."
+    },
+    {
+      "timestamp": "49:21",
+      "title": "Slutsats och tips om att följa podcasten",
+      "summary": "Slutsats av avsnittet med tips om att följa podcasten på sociala medier och mejla."
+    },
+    {
+      "timestamp": "50:00",
+      "title": "Framtidens träningsplan och OS",
+      "summary": "Framtidens träningsplan med fokus på OS och skiatlåning."
+    },
+    {
+      "timestamp": "50:54",
+      "title": "Följande OS-löpare och planer på intervjuer",
+      "summary": "Författaren planerar att följa en löpare under OS och göra intervjuer efteråt."
+    },
+    {
+      "timestamp": "52:05",
+      "title": "Träning och rehab för att förbättra hälsa",
+      "summary": "Författaren menar att träning och rehab kan förbättra sömn, jobb och stress."
+    },
+    {
+      "timestamp": "52:38",
+      "title": "Förhoppning om att få följa en intervju och fortsätta med träning",
+      "summary": "Författaren hoppas att få följa en intervju och att fortsätta med träning och rehab för att förbättra prestationen och livskvaliteten."
+    }
+  ],
+  "keywords": [
+    "tröskelvärden",
+    "VO2max",
+    "träningsplanering",
+    "långpass",
+    "ZON2",
+    "alternativ träning",
+    "polarisering",
+    "träningsintensitet",
+    "maraton",
+    "testning",
+    "träningsfysiologi",
+    "hälsa",
+    "rehab",
+    "OS",
+    "skiatlåning"
+  ]
+}

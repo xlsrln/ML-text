@@ -1,0 +1,134 @@
+{
+  "model": "qwen3:8b",
+  "chunks": 8,
+  "successful_chunks": 8,
+  "episode_summary": "Erik och Mikael Mattsson diskuterar pulszoner och hur de kan användas i löpningsträningen, särskilt för maratonlöpare. De går igenom olika pulszoner, från uppvärmning till intensiv träning, och förklarar hur man kan använda pulsklockor för att hålla sig i rätt zon. De nämner även tröskelträning, träningsintensitet och hur man kan optimera träningspass för att förbättra prestationen. Det finns en diskussion om hur man kan använda pulszoner under själva maratonlöpet för att undvika att hamna i för höga zoner för tidigt. Avsnittet avslutas med en promotion av nästa veckas avsnitt där de kommer att göra test på labbet.",
+  "chapters": [
+    {
+      "timestamp": "00:00",
+      "title": "Inledning och bakgrund",
+      "summary": "Erik och Mikael Mattsson introducerar sig och förklarar att de kommer att diskutera pulszoner och hur de kan användas i löpningsträningen. De nämner att det är en viktig del av träningsplaneringen för att förbättra prestationen."
+    },
+    {
+      "timestamp": "05:00",
+      "title": "Pulszoner och träningsintensitet",
+      "summary": "Erik och Mikael Mattsson förklarar hur pulszoner kan användas för att styra träningsintensiteten. De nämner olika zoner och hur de kan användas i olika typer av träning, från uppvärmning till intensiv träning."
+    },
+    {
+      "timestamp": "10:00",
+      "title": "Tröskel och dess betydelse",
+      "summary": "De diskuterar tröskel och hur den kan användas som en referens vid maraton. Erik berättar att han inte alltid kollar på pulsen under träningen men tycker att det är intressant att förstå teorin bakom."
+    },
+    {
+      "timestamp": "15:00",
+      "title": "Tröskelträning och pulszoner",
+      "summary": "Erik och Mikael Mattsson går igenom hur tröskelträning kan kombineras med pulszoner för att förbättra prestationen. De nämner hur man kan testa vilken procent av tröskel man klarar."
+    },
+    {
+      "timestamp": "20:00",
+      "title": "Pulszoner och maratonträning",
+      "summary": "De diskuterar hur pulszoner kan användas för att optimera maratonträningen. Erik föreslår att han kommer att ändra sitt träningssätt utifrån det som sagts."
+    },
+    {
+      "timestamp": "25:00",
+      "title": "Tröskel och maraton",
+      "summary": "Erik och Mikael Mattsson diskuterar hur tröskel kan användas som en referens vid maraton, och hur man kan testa vilken procent av tröskel man klarar."
+    },
+    {
+      "timestamp": "29:01",
+      "title": "Tröskel och maraton",
+      "summary": "Diskussion om hur tröskel kan användas som en referens vid maraton, och hur man kan testa vilken procent av tröskel man klarar."
+    },
+    {
+      "timestamp": "30:00",
+      "title": "Pulszoner och deras betydelse i träningen",
+      "summary": "Erik och Mikael Mattsson diskuterar hur pulszoner kan användas i träningen och hur de kan påverka prestationen."
+    },
+    {
+      "timestamp": "32:00",
+      "title": "De sex pulszonerna och deras användning",
+      "summary": "De går igenom de sex olika pulszonerna och hur de kan användas i olika typer av träning, från uppvärmning till intensiv träning."
+    },
+    {
+      "timestamp": "33:48",
+      "title": "Pulszoner och träningsintensitet: Zon 2, 4 och 6",
+      "summary": "Diskussion om hur man ska ligga i olika pulszoner för olika pass, med fokus på zon 2, 4 och 6, samt undvikande av zon 3 och 5."
+    },
+    {
+      "timestamp": "34:49",
+      "title": "Testning av pulszoner och tröskel",
+      "summary": "Förslag på att göra test i labbet för att få exakta pulszoner och tröskelvärden, samt reflektioner kring tidigare träningspass."
+    },
+    {
+      "timestamp": "36:08",
+      "title": "Vässa träningspass för maximal effekt",
+      "summary": "Diskussion om hur man kan justera träningspass för att få ut maximal effekt genom att ligga i rätt zoner."
+    },
+    {
+      "timestamp": "38:21",
+      "title": "Användning av pulszoner under maraton",
+      "summary": "Förslag på hur man kan använda pulszoner under själva maratonloppet för att undvika att hamna i för höga zoner för tidigt."
+    },
+    {
+      "timestamp": "40:00",
+      "title": "Testet på löpband och förberedelser inför tröskelträning",
+      "summary": "Deltagaren berättar om sin nervositet att springa på löpband och hur han förbereder sig för testet."
+    },
+    {
+      "timestamp": "42:00",
+      "title": "Träningsplan för veckan och veckans utmaning",
+      "summary": "Deltagaren beskriver sin träningsplan för veckan och föreslår att veckans utmaning ska vara ett tröskelpass."
+    },
+    {
+      "timestamp": "44:00",
+      "title": "Hur man genomför tröskelintervallträning",
+      "summary": "Det förklaras hur man ska genomföra tröskelintervall med åtta minuters arbetet och två minuters vilan."
+    },
+    {
+      "timestamp": "44:38",
+      "title": "Tröskelpuls och pulszoner i intervallen",
+      "summary": "En diskussion om hur man ska hantera pulsen under intervallen och att undvika att dra på Usain Bolt-spurt."
+    },
+    {
+      "timestamp": "45:00",
+      "title": "Promotion av nästa veckas avsnitt",
+      "summary": "Promotion av nästa avsnitt där de kommer att göra test på labbet och förklara dem."
+    },
+    {
+      "timestamp": "46:20",
+      "title": "Avslutande kommentarer och humor",
+      "summary": "Avslutande kommentarer med humor om sittande i en pall och uppmaning att fortsätta med träningen."
+    }
+  ],
+  "keywords": [
+    "pulszoner",
+    "tröskelträning",
+    "tröskelpuls",
+    "intervallträning",
+    "maratonträning",
+    "löpning",
+    "träningsintensitet",
+    "träningsfysiologi",
+    "träningsplanering",
+    "tröskel",
+    "maxpuls",
+    "fart",
+    "vila",
+    "löpband",
+    "pulsklocka",
+    "zonsystem",
+    "långpass",
+    "truskelpass",
+    "intervallpass",
+    "labbtest",
+    "test på labb",
+    "truskeltest",
+    "maxpulstest",
+    "träningsteknik",
+    "träningsmetoder",
+    "träningsfysiologi",
+    "lågintensitetspass",
+    "hastighet",
+    "mjölksyra"
+  ]
+}

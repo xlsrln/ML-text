@@ -1,55 +1,109 @@
 {
-  "episode": 2,
-  "ollama_model": "gemma3:4b",
+  "model": "qwen3:8b",
+  "chunks": 10,
+  "successful_chunks": 10,
+  "episode_summary": "Podcasten fokuserar på träningsplanering för maratonlöpare med en stark inriktning på träningsperiodisering, intensitetsvariation, och anpassning av träningen till livets händelser. Innehållet täcker olika aspekter av maratonträning, från grundträning till specifik maratonträning, med inslag av träningsmetoder som tröskelträning, pulserad träning, och MAF-test. Det finns även en diskussion om vinterlöpning, löpbandsträning, och hur man kan förbättra kroppseffektivitet genom självbedömning. Sammanfattningsvis är innehållet ett omfattande utrymme för löpare som vill förbereda sig för maratonlopp med en strukturerad och anpassad träningsplan.",
   "chapters": [
     {
-      "timestamp": "00:05",
-      "seconds": 5,
-      "title": "Maratonplanering och utmaningar"
+      "timestamp": "38:05",
+      "title": "Mål och förväntningar på maratonloppet",
+      "summary": "En del av diskussionen handlar om att ha mål även om de inte är primära, och hur man förbereder sig för ett lopp."
     },
     {
-      "timestamp": "08:11",
-      "seconds": 491,
-      "title": "Kalla händer och maratonplanering"
+      "timestamp": "39:35",
+      "title": "Periodisering av träningscykeln",
+      "summary": "Marcus Nilsons bok beskrivs med tre perioder i träningscykeln: grundträning, fartträning och specifik maratonträning."
     },
     {
-      "timestamp": "12:12",
-      "seconds": 732,
-      "title": "Benstyrka och långpass i maraton"
+      "timestamp": "40:35",
+      "title": "Specifik maratonträning och effektivitet",
+      "summary": "Fokus ligger på att utveckla effektivitet i maratonfarten och teknik för att klara långdistanslöpning."
     },
     {
-      "timestamp": "52:34",
-      "seconds": 3154,
-      "title": "Värma händerna inför löpning"
+      "timestamp": "42:00",
+      "title": "Pulserad träning och variering av intensitet",
+      "summary": "En diskussion om hur man kan variera intensiteten i träningsveckorna och använda pulserad träning för att förbättra prestationen."
+    },
+    {
+      "timestamp": "42:15",
+      "title": "Veckoplanering med intensitetsvariationer",
+      "summary": "En beskrivning av hur en veckoplan ska se ut med hårdare och lugnare veckor."
+    },
+    {
+      "timestamp": "43:29",
+      "title": "Fokus på målmaraton och mentalt förberedande",
+      "summary": "En diskussion om att fokusera på ett specifikt målmaraton och att undvika att tänka för långt fram i tiden."
+    },
+    {
+      "timestamp": "44:02",
+      "title": "Tidsplanering till målmaraton",
+      "summary": "En diskussion om hur många veckor som finns kvar till målmaraton och hur man hanterar tidsplanering."
+    },
+    {
+      "timestamp": "44:53",
+      "title": "Förberedelser inför maraton och mål i Frankfurt och Lidinge",
+      "summary": "Diskussion om att springa i Frankfurt och Lidinge, samt hur man ska hantera tidsplaneringen."
+    },
+    {
+      "timestamp": "47:23",
+      "title": "Sammanfattning av träningsplanering och framtida träningsplan",
+      "summary": "Sammanfattning av diskussionen om träningsplanering och hur träningsplanen ska se ut nästa vecka."
+    },
+    {
+      "timestamp": "48:30",
+      "title": "Löpträning på vintern och löpbandsträning",
+      "summary": "Fokus på hur man kan träna på löpband under vintermånaderna och vilka pass som passar."
+    },
+    {
+      "timestamp": "49:16",
+      "title": "MAF-test och aerob kapacitet",
+      "summary": "Beskrivning av MAF-testet och hur det används för att mäta och förbättra löpkapacitet."
+    },
+    {
+      "timestamp": "50:15",
+      "title": "Testning av löpande effektivitet i pulszon",
+      "summary": "En metod för att testa hur långt man kan springa i en konstant pulszon under 40 minuter."
+    },
+    {
+      "timestamp": "52:12",
+      "title": "Framtidig träning och vinterträning",
+      "summary": "Förhoppning om att diskutera vinterträning och löpbandsträning nästa vecka, samt tips för att springa utomhus."
     }
   ],
-  "topics": [
-    "Maratonträning",
-    "Löpning",
-    "Träningsplanering",
-    "Uthållighetsträning",
-    "Skadehantering",
-    "Tempoökning",
-    "Kärnstyrka och benstyrka",
-    "Löpteknik"
-  ],
   "keywords": [
-    "Erik",
-    "Camilla",
-    "Sub3",
-    "3.10-3.15",
-    "20 km",
-    "Maratontempo",
-    "Kärnstyrka",
-    "Benstyrka",
-    "Skadeproblem",
-    "Löpekonomi",
-    "Fartökningslångpass",
-    "Intervaller",
-    "Lidinge loppet",
-    "Frankfurt",
-    "Stockholm halvmaraton",
-    "Löpband",
-    "Pulzon"
+    "maratonträning",
+    "träningsperiodisering",
+    "grundträning",
+    "fartträning",
+    "specifik maratonträning",
+    "tröskelträning",
+    "intervallträning",
+    "pulserad träning",
+    "löpträning",
+    "träningsfysiologi",
+    "veckoplanering",
+    "återhämtningsvecka",
+    "intensitet",
+    "målmaraton",
+    "tidsplanering",
+    "livshändelser",
+    "anpassning",
+    "fysisk träning",
+    "löpbandsträning",
+    "vinterlöpning",
+    "MAF-test",
+    "löpkapacitet",
+    "långpass",
+    "Lidingeloppet",
+    "Frankfurtmaraton",
+    "träningspass",
+    "förberedelser",
+    "puls",
+    "löpande effektivitet",
+    "träningsmetod",
+    "hälsotips",
+    "självbedömning",
+    "kroppseffektivitet",
+    "träningsplanering"
   ]
 }
