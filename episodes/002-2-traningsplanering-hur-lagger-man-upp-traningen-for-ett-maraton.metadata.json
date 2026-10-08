@@ -1,0 +1,77 @@
+{
+  "episode": 2,
+  "ollama_model": "gemma3:4b",
+  "speaker_assignments": {
+    "SPEAKER_00": "Johan Forsstedt",
+    "SPEAKER_01": "Erik Olofsson",
+    "SPEAKER_02": "Unknown",
+    "SPEAKER_03": "Guest"
+  },
+  "chapters": [
+    {
+      "timestamp": "00:05",
+      "seconds": 5,
+      "title": "Träningsplanering inför maraton"
+    },
+    {
+      "timestamp": "08:11",
+      "seconds": 491,
+      "title": "Träningsplanering inför maraton"
+    },
+    {
+      "timestamp": "16:28",
+      "seconds": 988,
+      "title": "Träning inför maraton - Volym och intensitet"
+    },
+    {
+      "timestamp": "24:29",
+      "seconds": 1469,
+      "title": "Intervallträning inför maraton"
+    },
+    {
+      "timestamp": "32:29",
+      "seconds": 1949,
+      "title": "Grundträning inför maraton"
+    },
+    {
+      "timestamp": "48:34",
+      "seconds": 2914,
+      "title": "MAF-test och löpbandsträning"
+    }
+  ],
+  "topics": [
+    "Podcast Introduction",
+    "Guest Introduction",
+    "Training Experience",
+    "Personal Marathon Record",
+    "Training Blocks",
+    "Strength Building",
+    "Risk of Injury",
+    "Race Goals",
+    "Training Variation",
+    "Recovery Strategies"
+  ],
+  "keywords": [
+    "Marathon-labbet",
+    "Petra Kindlund",
+    "Erik",
+    "Runacademy",
+    "Personligt rekord",
+    "Löppass",
+    "Träning",
+    "Block",
+    "Benstyrka",
+    "Skivstång",
+    "Händerna",
+    "Skadeproblem",
+    "Lugnt",
+    "Öka",
+    "Tröskelfart",
+    "Intervallpass",
+    "Tröskelpass",
+    "Hårda intervaller",
+    "Progressiva ökningar",
+    "Influens",
+    "Återhämtningsvecka"
+  ]
+}
