@@ -26,6 +26,7 @@ def ask_ollama(prompt: str) -> str:
         "stream": False,
         "options": {
             "temperature": 0,
+            "think": False,
         },
     }
 
