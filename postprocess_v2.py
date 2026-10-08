@@ -5,6 +5,7 @@ from pathlib import Path
 
 import requests
 
+
 BASE_DIR = Path(__file__).resolve().parent
 EPISODES_DIR = BASE_DIR / "episodes"
 
@@ -24,10 +25,17 @@ def ask_ollama(prompt: str) -> str:
         "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
+
+        # Ask Ollama itself to constrain the output to JSON.
+        "format": "json",
+
         "options": {
             "temperature": 0,
-            "think": False,
         },
+
+        # Qwen3 supports thinking control.
+        # We don't need reasoning text for this task.
+        "think": False,
     }
 
     response = requests.post(
@@ -40,24 +48,83 @@ def ask_ollama(prompt: str) -> str:
 
     data = response.json()
 
-    return data["response"]
+    # Normal /api/generate response.
+    result = data.get("response", "")
+
+    if not result:
+        print("\nOväntat svar från Ollama:")
+        print(
+            json.dumps(
+                data,
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+
+        raise RuntimeError(
+            "Ollama returnerade inget 'response'-fält "
+            "eller ett tomt response."
+        )
+
+    return result.strip()
 
 
 def clean_json_response(text: str) -> str:
 
     text = text.strip()
 
+    if not text:
+        raise ValueError(
+            "Ollama returnerade en tom sträng."
+        )
+
+    # Remove markdown code fences if the model
+    # ignored the JSON format request.
     if "```json" in text:
-        text = text.split("```json", 1)[1]
 
-    if "```" in text:
-        text = text.split("```", 1)[0]
+        text = text.split(
+            "```json",
+            1,
+        )[1]
 
+        if "```" in text:
+            text = text.split(
+                "```",
+                1,
+            )[0]
+
+    elif "```" in text:
+
+        text = text.split(
+            "```",
+            1,
+        )[1]
+
+        if "```" in text:
+            text = text.split(
+                "```",
+                1,
+            )[0]
+
+    text = text.strip()
+
+    # Find the outer JSON object.
     start = text.find("{")
     end = text.rfind("}")
 
     if start >= 0 and end > start:
-        text = text[start:end + 1]
+
+        text = text[
+            start:end + 1
+        ]
+
+    else:
+
+        raise ValueError(
+            "Ollama returnerade inget JSON-objekt.\n\n"
+            "Rått svar från Ollama:\n"
+            + text
+        )
 
     return text
 
@@ -68,7 +135,9 @@ def clean_json_response(text: str) -> str:
 
 def load_episode(path: Path):
 
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(
+        encoding="utf-8"
+    )
 
     title_match = re.search(
         r"^#\s+(.*)$",
@@ -125,21 +194,37 @@ Du analyserar ett avsnitt av podcasten Maratonlabbet.
 Syftet är att skapa en långsiktig kunskapsbas om löpning,
 maratonträning, Johan Forsstedt och Erik Olofsson.
 
-Fokusera på:
+Fokusera på information som faktiskt finns i avsnittet.
+
+Identifiera särskilt:
 
 - Johan Forsstedts träning
 - Erik Olofssons träning
-- Gäster
-- Träningsråd
-- Pass som nämns
-- Träningsvolym
-- Skador
-- Tävlingar
-- Böcker
-- Coacher
-- Mentala strategier
+- gäster
+- träningsråd
+- träningspass
+- träningsvolym
+- skador
+- tävlingar
+- personliga rekord
+- mål
+- böcker
+- coacher
+- mentala strategier
+- viktiga träningsprinciper
+
+Var konservativ.
+
+Hitta inte på information.
+
+Om något inte nämns ska motsvarande lista vara tom.
+
+Om du är osäker på en uppgift ska du hellre utelämna den
+än att gissa.
 
 Returnera ENDAST giltig JSON.
+
+JSON-strukturen måste vara exakt:
 
 {{
   "episode_summary": {{
@@ -184,6 +269,19 @@ Returnera ENDAST giltig JSON.
   "keywords": []
 }}
 
+Viktigt:
+
+- Skriv alla värden på svenska.
+- Använd korta, konkreta formuleringar.
+- Upprepa inte samma information i flera kategorier om det
+  inte behövs.
+- "workouts" ska innehålla konkreta träningspass som nämns.
+- "races" ska innehålla konkreta lopp/tävlingar som nämns.
+- "training_principles" ska innehålla träningsidéer eller
+  principer som faktiskt diskuteras.
+- "keywords" ska vara användbara sökord, inte bara allmänna
+  ord som "träning" och "löpning".
+
 Titel:
 
 {data["title"]}
@@ -212,95 +310,183 @@ def build_markdown(data):
     lines.append("")
 
     lines.append(
-        f"**Huvudämne:** {summary['main_topic']}"
+        f"**Huvudämne:** "
+        f"{summary.get('main_topic', '')}"
     )
+
     lines.append("")
 
-    lines.append("## Viktigaste lärdomarna")
+    lines.append(
+        "## Viktigaste lärdomarna"
+    )
+
     lines.append("")
 
-    for item in summary["key_takeaways"]:
-        lines.append(f"- {item}")
+    for item in summary.get(
+        "key_takeaways",
+        [],
+    ):
+
+        lines.append(
+            f"- {item}"
+        )
 
     lines.append("")
     lines.append("## Johan")
 
-    for section in [
+    for title, key in [
         ("Träning", "training"),
         ("Mål", "goals"),
         ("Skador", "injuries"),
         ("Åsikter", "opinions"),
     ]:
 
-        lines.append("")
-        lines.append(f"### {section[0]}")
+        values = data.get(
+            "johan",
+            {},
+        ).get(
+            key,
+            [],
+        )
 
-        for item in data["johan"][section[1]]:
-            lines.append(f"- {item}")
+        lines.append("")
+        lines.append(
+            f"### {title}"
+        )
+
+        for item in values:
+
+            lines.append(
+                f"- {item}"
+            )
 
     lines.append("")
     lines.append("## Erik")
 
-    for section in [
+    for title, key in [
         ("Träning", "training"),
         ("Mål", "goals"),
         ("Skador", "injuries"),
         ("Åsikter", "opinions"),
     ]:
 
+        values = data.get(
+            "erik",
+            {},
+        ).get(
+            key,
+            [],
+        )
+
         lines.append("")
-        lines.append(f"### {section[0]}")
+        lines.append(
+            f"### {title}"
+        )
 
-        for item in data["erik"][section[1]]:
-            lines.append(f"- {item}")
+        for item in values:
 
-    if data["guests"]:
+            lines.append(
+                f"- {item}"
+            )
+
+    guests = data.get(
+        "guests",
+        [],
+    )
+
+    if guests:
 
         lines.append("")
         lines.append("## Gäster")
 
-        for guest in data["guests"]:
+        for guest in guests:
+
+            name = guest.get(
+                "name",
+                "Okänd",
+            )
 
             lines.append("")
             lines.append(
-                f"### {guest['name']}"
+                f"### {name}"
             )
 
-            if guest["background"]:
+            background = guest.get(
+                "background",
+                "",
+            )
+
+            if background:
+
                 lines.append("")
                 lines.append(
-                    guest["background"]
+                    background
                 )
 
-            lines.append("")
-            lines.append("Råd:")
+            advice = guest.get(
+                "advice",
+                [],
+            )
 
-            for advice in guest["advice"]:
-                lines.append(
-                    f"- {advice}"
-                )
+            if advice:
+
+                lines.append("")
+                lines.append("Råd:")
+
+                for item in advice:
+
+                    lines.append(
+                        f"- {item}"
+                    )
 
     sections = [
-        ("Träningsprinciper", "training_principles"),
-        ("Träningspass", "workouts"),
-        ("Tävlingar", "races"),
-        ("Skador", "injuries"),
-        ("Böcker", "books"),
-        ("Coacher", "coaches"),
-        ("Nyckelord", "keywords"),
+        (
+            "Träningsprinciper",
+            "training_principles",
+        ),
+        (
+            "Träningspass",
+            "workouts",
+        ),
+        (
+            "Tävlingar",
+            "races",
+        ),
+        (
+            "Skador",
+            "injuries",
+        ),
+        (
+            "Böcker",
+            "books",
+        ),
+        (
+            "Coacher",
+            "coaches",
+        ),
+        (
+            "Nyckelord",
+            "keywords",
+        ),
     ]
 
     for title, key in sections:
 
-        values = data.get(key, [])
+        values = data.get(
+            key,
+            [],
+        )
 
         if not values:
             continue
 
         lines.append("")
-        lines.append(f"## {title}")
+        lines.append(
+            f"## {title}"
+        )
 
         for value in values:
+
             lines.append(
                 f"- {value}"
             )
@@ -314,25 +500,64 @@ def build_markdown(data):
 
 def process_episode(path: Path):
 
-    print(f"Bearbetar {path.name}")
+    print()
+    print("=" * 70)
+    print(
+        f"Bearbetar {path.name}"
+    )
+    print("=" * 70)
 
-    episode = load_episode(path)
+    episode = load_episode(
+        path
+    )
 
     prompt = build_prompt(
         episode
+    )
+
+    print(
+        "Skickar avsnittet till Ollama..."
     )
 
     response = ask_ollama(
         prompt
     )
 
+    print(
+        "Svar från Ollama:"
+    )
+
+    print(
+        response[:1000]
+    )
+
+    print()
+
     response = clean_json_response(
         response
     )
 
-    data = json.loads(
-        response
-    )
+    try:
+
+        data = json.loads(
+            response
+        )
+
+    except json.JSONDecodeError as exc:
+
+        print(
+            "Kunde inte tolka Ollamas svar som JSON.",
+        )
+
+        print(
+            "\nRensat svar:"
+        )
+
+        print(response)
+
+        raise RuntimeError(
+            f"JSON-fel: {exc}"
+        ) from exc
 
     json_file = path.with_suffix(
         ".summary.json"
@@ -395,18 +620,27 @@ def main():
 
     if args.only is not None:
 
-        prefix = f"{args.only:03d}-"
+        prefix = (
+            f"{args.only:03d}-"
+        )
 
         files = [
             f
             for f in files
-            if f.name.startswith(prefix)
+            if f.name.startswith(
+                prefix
+            )
         ]
 
     for file in files:
 
         if file.name.endswith(
             ".summary.md"
+        ):
+            continue
+
+        if file.name.endswith(
+            ".processed.md"
         ):
             continue
 
