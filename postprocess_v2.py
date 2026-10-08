@@ -1,10 +1,16 @@
+```python
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 import requests
 
+
+# ============================================================
+# Configuration
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 EPISODES_DIR = BASE_DIR / "episodes"
@@ -12,640 +18,646 @@ EPISODES_DIR = BASE_DIR / "episodes"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "qwen3:8b"
 
-REQUEST_TIMEOUT = 600
+OLLAMA_TIMEOUT = 600
+
+# Number of transcript lines sent to Ollama at once.
+# Keeping this reasonably small helps Qwen stay focused.
+LINES_PER_BATCH = 80
 
 
-# ==========================================================
+# ============================================================
+# JSON schema for Ollama
+# ============================================================
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "episode_summary": {
+            "type": "string"
+        },
+        "chapters": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "timestamp": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "summary": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "timestamp",
+                    "title",
+                    "summary"
+                ]
+            }
+        },
+        "keywords": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "required": [
+        "episode_summary",
+        "chapters",
+        "keywords"
+    ]
+}
+
+
+# ============================================================
+# Markdown parsing
+# ============================================================
+
+TIMESTAMP_RE = re.compile(
+    r"^\*\*\[(\d{1,2}:\d{2}(?::\d{2})?)\]\*\*\s*(.*)$"
+)
+
+
+def parse_transcript(markdown: str):
+    """
+    Extract transcript lines:
+
+        **[00:05]** Hello there
+
+    Returns:
+        [
+            {
+                "timestamp": "00:05",
+                "text": "Hello there"
+            },
+            ...
+        ]
+    """
+
+    lines = []
+
+    in_transcript = False
+
+    for line in markdown.splitlines():
+
+        if line.strip() == "## Transkription":
+            in_transcript = True
+            continue
+
+        if not in_transcript:
+            continue
+
+        match = TIMESTAMP_RE.match(line.strip())
+
+        if not match:
+            continue
+
+        timestamp = match.group(1)
+        text = match.group(2).strip()
+
+        if text:
+            lines.append({
+                "timestamp": timestamp,
+                "text": text,
+            })
+
+    return lines
+
+
+# ============================================================
+# Episode metadata
+# ============================================================
+
+def extract_title(markdown: str) -> str:
+    match = re.search(
+        r"^#\s+Avsnitt\s+\d+:\s*(.+)$",
+        markdown,
+        re.MULTILINE,
+    )
+
+    if match:
+        return match.group(1).strip()
+
+    return "Okänt avsnitt"
+
+
+def extract_episode_number(path: Path) -> str:
+    match = re.match(r"(\d+)-", path.name)
+
+    if match:
+        return match.group(1)
+
+    return "?"
+
+
+# ============================================================
 # Ollama
-# ==========================================================
+# ============================================================
 
-def ask_ollama(prompt: str) -> str:
+def ask_ollama(prompt: str) -> dict:
 
     payload = {
         "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
 
-        # Ask Ollama itself to constrain the output to JSON.
-        "format": "json",
+        # Qwen3 supports this at the top level.
+        "think": False,
+
+        # IMPORTANT:
+        # Give Ollama the actual JSON schema instead of just
+        # asking for JSON in natural language.
+        "format": OUTPUT_SCHEMA,
 
         "options": {
             "temperature": 0,
         },
-
-        # Qwen3 supports thinking control.
-        # We don't need reasoning text for this task.
-        "think": False,
     }
 
-    response = requests.post(
-        OLLAMA_URL,
-        json=payload,
-        timeout=REQUEST_TIMEOUT,
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    # Normal /api/generate response.
-    result = data.get("response", "")
-
-    if not result:
-        print("\nOväntat svar från Ollama:")
-        print(
-            json.dumps(
-                data,
-                indent=2,
-                ensure_ascii=False,
-            )
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json=payload,
+            timeout=OLLAMA_TIMEOUT,
         )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Kunde inte kontakta Ollama: {exc}"
+        ) from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Ollama returnerade HTTP {response.status_code}:\n"
+            f"{response.text[:3000]}"
+        )
+
+    try:
+        outer = response.json()
+    except json.JSONDecodeError:
+        raise RuntimeError(
+            "Ollama returnerade inte giltig JSON:\n"
+            + response.text[:3000]
+        )
+
+    raw = outer.get("response", "")
+
+    if not raw:
+        print("\nOllama-svar:")
+        print(json.dumps(outer, ensure_ascii=False, indent=2)[:5000])
 
         raise RuntimeError(
-            "Ollama returnerade inget 'response'-fält "
-            "eller ett tomt response."
+            "Ollama returnerade ett tomt 'response'-fält."
         )
 
-    return result.strip()
+    print("\nSvar från Ollama:")
+    print(raw[:1500])
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print("\n--- Ogiltigt JSON från Ollama ---")
+        print(raw[:5000])
+        print("--- slut ---")
+
+        raise RuntimeError(
+            f"Ollamas response kunde inte parsas som JSON: {exc}"
+        ) from exc
+
+    return data
 
 
-def clean_json_response(text: str) -> str:
-
-    text = text.strip()
-
-    if not text:
-        raise ValueError(
-            "Ollama returnerade en tom sträng."
-        )
-
-    # Remove markdown code fences if the model
-    # ignored the JSON format request.
-    if "```json" in text:
-
-        text = text.split(
-            "```json",
-            1,
-        )[1]
-
-        if "```" in text:
-            text = text.split(
-                "```",
-                1,
-            )[0]
-
-    elif "```" in text:
-
-        text = text.split(
-            "```",
-            1,
-        )[1]
-
-        if "```" in text:
-            text = text.split(
-                "```",
-                1,
-            )[0]
-
-    text = text.strip()
-
-    # Find the outer JSON object.
-    start = text.find("{")
-    end = text.rfind("}")
-
-    if start >= 0 and end > start:
-
-        text = text[
-            start:end + 1
-        ]
-
-    else:
-
-        raise ValueError(
-            "Ollama returnerade inget JSON-objekt.\n\n"
-            "Rått svar från Ollama:\n"
-            + text
-        )
-
-    return text
-
-
-# ==========================================================
-# Parsing
-# ==========================================================
-
-def load_episode(path: Path):
-
-    text = path.read_text(
-        encoding="utf-8"
-    )
-
-    title_match = re.search(
-        r"^#\s+(.*)$",
-        text,
-        flags=re.MULTILINE,
-    )
-
-    title = (
-        title_match.group(1).strip()
-        if title_match
-        else path.stem
-    )
-
-    description = ""
-
-    if "## Om avsnittet" in text:
-
-        after = text.split(
-            "## Om avsnittet",
-            1,
-        )[1]
-
-        description = after.split(
-            "##",
-            1,
-        )[0].strip()
-
-    transcript = ""
-
-    if "## Transkription" in text:
-
-        transcript = text.split(
-            "## Transkription",
-            1,
-        )[1]
-
-    return {
-        "title": title,
-        "description": description,
-        "transcript": transcript,
-        "raw": text,
-    }
-
-
-# ==========================================================
+# ============================================================
 # Prompt
-# ==========================================================
+# ============================================================
 
-def build_prompt(data):
+def make_prompt(
+    title: str,
+    transcript_lines: list[dict],
+    is_full_episode: bool = True,
+) -> str:
+
+    transcript = "\n".join(
+        f"[{item['timestamp']}] {item['text']}"
+        for item in transcript_lines
+    )
+
+    if is_full_episode:
+        task = """
+Analysera hela podcastavsnittet.
+
+1. Skriv en kort men informativ sammanfattning av hela avsnittet.
+2. Identifiera de viktigaste ämnesbytena och skapa kapitel.
+3. Ge varje kapitel en kort, tydlig titel.
+4. Ge varje kapitel en kort sammanfattning.
+5. Ta fram 5–15 relevanta ämnesord/keywords.
+
+Välj bara kapitel när samtalet faktiskt byter ämne.
+Skapa inte ett kapitel för varje liten fråga eller kommentar.
+
+Använd tidsstämplarna i transkriptionen för kapitlens starttid.
+"""
+    else:
+        task = """
+Analysera detta transkriptutdrag.
+
+Identifiera:
+- viktiga ämnen
+- viktiga fakta
+- möjliga kapitel
+- relevanta keywords
+
+Detta är ett delutdrag, så sammanfattningen behöver bara beskriva
+vad som faktiskt förekommer i utdraget.
+"""
 
     return f"""
-Du analyserar ett avsnitt av podcasten Maratonlabbet.
+Du arbetar med efterbearbetning av en svensk podcasttranskription.
 
-Syftet är att skapa en långsiktig kunskapsbas om löpning,
-maratonträning, Johan Forsstedt och Erik Olofsson.
+Podcastavsnitt:
+{title}
 
-Fokusera på information som faktiskt finns i avsnittet.
+{task}
 
-Identifiera särskilt:
+VIKTIGT:
 
-- Johan Forsstedts träning
-- Erik Olofssons träning
-- gäster
-- träningsråd
-- träningspass
-- träningsvolym
-- skador
-- tävlingar
-- personliga rekord
-- mål
-- böcker
-- coacher
-- mentala strategier
-- viktiga träningsprinciper
+Du ska INTE skriva om transkriptionen.
 
-Var konservativ.
+Du ska INTE återge transkriptionen.
 
-Hitta inte på information.
+Du ska INTE skapa ett fält som heter "transcript".
 
-Om något inte nämns ska motsvarande lista vara tom.
+Du ska analysera innehållet och returnera endast JSON enligt det
+schema som API:t har skickat till dig.
 
-Om du är osäker på en uppgift ska du hellre utelämna den
-än att gissa.
+Var noggrann med svenska namn, löptermer och träningsbegrepp.
 
-Returnera ENDAST giltig JSON.
+TRANSKRIPTION:
 
-JSON-strukturen måste vara exakt:
-
-{{
-  "episode_summary": {{
-    "main_topic": "",
-    "key_takeaways": []
-  }},
-
-  "johan": {{
-    "training": [],
-    "goals": [],
-    "injuries": [],
-    "opinions": []
-  }},
-
-  "erik": {{
-    "training": [],
-    "goals": [],
-    "injuries": [],
-    "opinions": []
-  }},
-
-  "guests": [
-    {{
-      "name": "",
-      "background": "",
-      "advice": []
-    }}
-  ],
-
-  "training_principles": [],
-
-  "workouts": [],
-
-  "races": [],
-
-  "injuries": [],
-
-  "books": [],
-
-  "coaches": [],
-
-  "keywords": []
-}}
-
-Viktigt:
-
-- Skriv alla värden på svenska.
-- Använd korta, konkreta formuleringar.
-- Upprepa inte samma information i flera kategorier om det
-  inte behövs.
-- "workouts" ska innehålla konkreta träningspass som nämns.
-- "races" ska innehålla konkreta lopp/tävlingar som nämns.
-- "training_principles" ska innehålla träningsidéer eller
-  principer som faktiskt diskuteras.
-- "keywords" ska vara användbara sökord, inte bara allmänna
-  ord som "träning" och "löpning".
-
-Titel:
-
-{data["title"]}
-
-Beskrivning:
-
-{data["description"]}
-
-Transkript:
-
-{data["transcript"]}
+{transcript}
 """
 
 
-# ==========================================================
-# Markdown output
-# ==========================================================
+# ============================================================
+# Validation
+# ============================================================
 
-def build_markdown(data):
+def validate_result(data: dict) -> bool:
 
-    lines = []
-
-    summary = data["episode_summary"]
-
-    lines.append("# Sammanfattning")
-    lines.append("")
-
-    lines.append(
-        f"**Huvudämne:** "
-        f"{summary.get('main_topic', '')}"
-    )
-
-    lines.append("")
-
-    lines.append(
-        "## Viktigaste lärdomarna"
-    )
-
-    lines.append("")
-
-    for item in summary.get(
-        "key_takeaways",
-        [],
-    ):
-
-        lines.append(
-            f"- {item}"
-        )
-
-    lines.append("")
-    lines.append("## Johan")
-
-    for title, key in [
-        ("Träning", "training"),
-        ("Mål", "goals"),
-        ("Skador", "injuries"),
-        ("Åsikter", "opinions"),
-    ]:
-
-        values = data.get(
-            "johan",
-            {},
-        ).get(
-            key,
-            [],
-        )
-
-        lines.append("")
-        lines.append(
-            f"### {title}"
-        )
-
-        for item in values:
-
-            lines.append(
-                f"- {item}"
-            )
-
-    lines.append("")
-    lines.append("## Erik")
-
-    for title, key in [
-        ("Träning", "training"),
-        ("Mål", "goals"),
-        ("Skador", "injuries"),
-        ("Åsikter", "opinions"),
-    ]:
-
-        values = data.get(
-            "erik",
-            {},
-        ).get(
-            key,
-            [],
-        )
-
-        lines.append("")
-        lines.append(
-            f"### {title}"
-        )
-
-        for item in values:
-
-            lines.append(
-                f"- {item}"
-            )
-
-    guests = data.get(
-        "guests",
-        [],
-    )
-
-    if guests:
-
-        lines.append("")
-        lines.append("## Gäster")
-
-        for guest in guests:
-
-            name = guest.get(
-                "name",
-                "Okänd",
-            )
-
-            lines.append("")
-            lines.append(
-                f"### {name}"
-            )
-
-            background = guest.get(
-                "background",
-                "",
-            )
-
-            if background:
-
-                lines.append("")
-                lines.append(
-                    background
-                )
-
-            advice = guest.get(
-                "advice",
-                [],
-            )
-
-            if advice:
-
-                lines.append("")
-                lines.append("Råd:")
-
-                for item in advice:
-
-                    lines.append(
-                        f"- {item}"
-                    )
-
-    sections = [
-        (
-            "Träningsprinciper",
-            "training_principles",
-        ),
-        (
-            "Träningspass",
-            "workouts",
-        ),
-        (
-            "Tävlingar",
-            "races",
-        ),
-        (
-            "Skador",
-            "injuries",
-        ),
-        (
-            "Böcker",
-            "books",
-        ),
-        (
-            "Coacher",
-            "coaches",
-        ),
-        (
-            "Nyckelord",
-            "keywords",
-        ),
+    required = [
+        "episode_summary",
+        "chapters",
+        "keywords",
     ]
 
-    for title, key in sections:
+    missing = [
+        key for key in required
+        if key not in data
+    ]
 
-        values = data.get(
-            key,
-            [],
+    if missing:
+        print("\nFEL: Ollama returnerade inte rätt struktur.")
+        print("Saknade fält:", ", ".join(missing))
+        print(
+            "Returnerade fält:",
+            ", ".join(data.keys()),
         )
 
-        if not values:
-            continue
-
-        lines.append("")
-        lines.append(
-            f"## {title}"
+        print("\nOllama returnerade:")
+        print(
+            json.dumps(
+                data,
+                ensure_ascii=False,
+                indent=2,
+            )[:5000]
         )
 
-        for value in values:
+        return False
 
-            lines.append(
-                f"- {value}"
+    if not isinstance(data["episode_summary"], str):
+        print("FEL: episode_summary är inte en sträng.")
+        return False
+
+    if not isinstance(data["chapters"], list):
+        print("FEL: chapters är inte en lista.")
+        return False
+
+    if not isinstance(data["keywords"], list):
+        print("FEL: keywords är inte en lista.")
+        return False
+
+    return True
+
+
+# ============================================================
+# Markdown output
+# ============================================================
+
+def build_markdown(
+    original_markdown: str,
+    data: dict,
+) -> str:
+
+    summary = data["episode_summary"]
+    chapters = data["chapters"]
+    keywords = data["keywords"]
+
+    # --------------------------------------------------------
+    # Remove old generated sections if they exist.
+    # --------------------------------------------------------
+
+    text = original_markdown
+
+    # Remove existing AI-generated section.
+    text = re.split(
+        r"\n## AI-efterbearbetning\s*\n",
+        text,
+        maxsplit=1,
+    )[0].rstrip()
+
+    output = []
+
+    # Keep original content.
+    output.append(text)
+
+    output.append("")
+    output.append("## AI-efterbearbetning")
+    output.append("")
+    output.append("### Sammanfattning")
+    output.append("")
+    output.append(summary.strip())
+
+    # --------------------------------------------------------
+    # Chapters
+    # --------------------------------------------------------
+
+    if chapters:
+        output.append("")
+        output.append("### Kapitel")
+        output.append("")
+
+        for chapter in chapters:
+
+            timestamp = chapter.get("timestamp", "").strip()
+            title = chapter.get("title", "").strip()
+            chapter_summary = chapter.get(
+                "summary",
+                "",
+            ).strip()
+
+            if not title:
+                continue
+
+            if timestamp:
+                output.append(
+                    f"- **[{timestamp}] {title}**"
+                )
+            else:
+                output.append(
+                    f"- **{title}**"
+                )
+
+            if chapter_summary:
+                output.append(
+                    f"  {chapter_summary}"
+                )
+
+    # --------------------------------------------------------
+    # Keywords
+    # --------------------------------------------------------
+
+    if keywords:
+        output.append("")
+        output.append("### Ämnesord")
+        output.append("")
+
+        clean_keywords = []
+
+        for keyword in keywords:
+            keyword = str(keyword).strip()
+
+            if keyword and keyword not in clean_keywords:
+                clean_keywords.append(keyword)
+
+        if clean_keywords:
+            output.append(
+                ", ".join(clean_keywords)
             )
 
-    return "\n".join(lines)
+    output.append("")
+
+    return "\n".join(output)
 
 
-# ==========================================================
-# Processing
-# ==========================================================
+# ============================================================
+# Process one episode
+# ============================================================
 
 def process_episode(path: Path):
 
     print()
     print("=" * 70)
-    print(
-        f"Bearbetar {path.name}"
-    )
+    print(f"Bearbetar {path.name}")
     print("=" * 70)
 
-    episode = load_episode(
-        path
+    markdown = path.read_text(
+        encoding="utf-8"
     )
 
-    prompt = build_prompt(
-        episode
-    )
+    transcript_lines = parse_transcript(markdown)
+
+    if not transcript_lines:
+        print("Hittade ingen transkription.")
+        return
 
     print(
-        "Skickar avsnittet till Ollama..."
+        f"Hittade {len(transcript_lines)} transkriptrader."
     )
 
-    response = ask_ollama(
-        prompt
+    title = extract_title(markdown)
+
+    print(f"Avsnitt: {title}")
+
+    # --------------------------------------------------------
+    # For now, send the complete episode.
+    # --------------------------------------------------------
+
+    prompt = make_prompt(
+        title,
+        transcript_lines,
+        is_full_episode=True,
     )
 
-    print(
-        "Svar från Ollama:"
+    print("Skickar avsnittet till Ollama...")
+
+    data = ask_ollama(prompt)
+
+    if not validate_result(data):
+        print("\nAvsnittet sparades inte.")
+        return
+
+    # --------------------------------------------------------
+    # Save metadata separately.
+    # --------------------------------------------------------
+
+    metadata_path = path.with_suffix(
+        ".metadata.json"
     )
 
-    print(
-        response[:1000]
-    )
-
-    print()
-
-    response = clean_json_response(
-        response
-    )
-
-    try:
-
-        data = json.loads(
-            response
-        )
-
-    except json.JSONDecodeError as exc:
-
-        print(
-            "Kunde inte tolka Ollamas svar som JSON.",
-        )
-
-        print(
-            "\nRensat svar:"
-        )
-
-        print(response)
-
-        raise RuntimeError(
-            f"JSON-fel: {exc}"
-        ) from exc
-
-    json_file = path.with_suffix(
-        ".summary.json"
-    )
-
-    md_file = path.with_suffix(
-        ".summary.md"
-    )
-
-    json_file.write_text(
+    metadata_path.write_text(
         json.dumps(
             data,
-            indent=2,
             ensure_ascii=False,
+            indent=2,
         ),
         encoding="utf-8",
     )
 
-    md_file.write_text(
-        build_markdown(data),
+    print(
+        f"Sparade metadata: {metadata_path.name}"
+    )
+
+    # --------------------------------------------------------
+    # Build processed Markdown.
+    # --------------------------------------------------------
+
+    output = build_markdown(
+        markdown,
+        data,
+    )
+
+    output_path = path.with_suffix(
+        ".processed.md"
+    )
+
+    output_path.write_text(
+        output,
         encoding="utf-8",
     )
 
     print(
-        f"Skrev {json_file.name}"
+        f"Sparade Markdown: {output_path.name}"
     )
 
-    print(
-        f"Skrev {md_file.name}"
-    )
+    print()
+    print("Klart.")
 
 
-# ==========================================================
-# CLI
-# ==========================================================
+# ============================================================
+# Find episodes
+# ============================================================
 
-def main():
-
-    global OLLAMA_MODEL
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--only",
-        type=int,
-    )
-
-    parser.add_argument(
-        "--model",
-        default=OLLAMA_MODEL,
-    )
-
-    args = parser.parse_args()
-
-    OLLAMA_MODEL = args.model
+def find_episode_files():
 
     files = sorted(
         EPISODES_DIR.glob("*.md")
     )
 
-    if args.only is not None:
+    # Never process generated files as input.
+    files = [
+        path
+        for path in files
+        if not path.name.endswith(".processed.md")
+        and not path.name.endswith(".summary.md")
+    ]
 
-        prefix = (
-            f"{args.only:03d}-"
+    return files
+
+
+# ============================================================
+# Main
+# ============================================================
+
+def main():
+
+    parser = argparse.ArgumentParser(
+        description="Efterbearbeta podcasttranskriptioner med Ollama."
+    )
+
+    parser.add_argument(
+        "--only",
+        type=int,
+        help="Bearbeta endast ett avsnitt, t.ex. --only 2",
+    )
+
+    parser.add_argument(
+        "--from",
+        dest="from_episode",
+        type=int,
+        help="Börja från ett visst avsnitt",
+    )
+
+    args = parser.parse_args()
+
+    if not EPISODES_DIR.exists():
+        print(
+            f"Hittar inte katalogen: {EPISODES_DIR}"
         )
+        sys.exit(1)
+
+    files = find_episode_files()
+
+    if args.only is not None:
+        prefix = f"{args.only:03d}-"
 
         files = [
-            f
-            for f in files
-            if f.name.startswith(
-                prefix
-            )
+            path
+            for path in files
+            if path.name.startswith(prefix)
         ]
 
-    for file in files:
+    elif args.from_episode is not None:
 
-        if file.name.endswith(
-            ".summary.md"
-        ):
+        files = [
+            path
+            for path in files
+            if path.name[:3].isdigit()
+            and int(path.name[:3])
+            >= args.from_episode
+        ]
+
+    if not files:
+        print("Inga avsnitt hittades.")
+        return
+
+    print(
+        f"Använder Ollama-modell: {OLLAMA_MODEL}"
+    )
+
+    for path in files:
+
+        try:
+            process_episode(path)
+
+        except KeyboardInterrupt:
+            print("\nAvbrutet.")
+            sys.exit(1)
+
+        except Exception as exc:
+            print()
+            print(
+                f"FEL vid bearbetning av {path.name}:"
+            )
+            print(exc)
+            print()
+
+            # Continue to next episode rather than
+            # killing the entire batch.
             continue
-
-        if file.name.endswith(
-            ".processed.md"
-        ):
-            continue
-
-        process_episode(file)
 
 
 if __name__ == "__main__":
     main()
+```
+
+This version should get past the specific failure you just hit. The important change is:
+
+```python
+"format": OUTPUT_SCHEMA
+```
+
+rather than simply `"format": "json"`.
+
+One caveat: **I deliberately kept this version to one Ollama call for the whole episode**, so let's first verify that Qwen reliably returns the correct structure. Once that works, I'd change the architecture to chunk the transcript and do a second synthesis pass — that will give you substantially better chapters and summaries on long episodes.
